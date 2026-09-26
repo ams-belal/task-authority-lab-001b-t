@@ -15,6 +15,11 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def snapshot(repo: str | Path, base_ref: str) -> dict[str, Any]:
+    """Reject changes observed during collection; this is not an atomic lock.
+
+    The result describes the repository across the checked capture interval.
+    Callers must still bind a later effect to the returned commit and base.
+    """
     root = Path(repo).resolve()
     status = _git(root, "status", "--porcelain=v1", "--untracked-files=all")
     if status:
@@ -23,6 +28,13 @@ def snapshot(repo: str | Path, base_ref: str) -> dict[str, Any]:
     commit = _git(root, "rev-parse", "HEAD")
     base_commit = _git(root, "rev-parse", base_ref)
     paths = _git(root, "diff", "--name-only", "--no-renames", f"{base_commit}...{commit}").splitlines()
+    diff_stat = _git(root, "diff", "--stat", f"{base_commit}...{commit}")
+    final_branch = _git(root, "branch", "--show-current")
+    final_commit = _git(root, "rev-parse", "HEAD")
+    final_base = _git(root, "rev-parse", base_ref)
+    final_status = _git(root, "status", "--porcelain=v1", "--untracked-files=all")
+    if final_status or (final_branch, final_commit, final_base) != (branch, commit, base_commit):
+        raise ValueError("repository changed during collection: worktree or refs changed; retry capture")
     result = {
         "repo": str(root),
         "branch": branch,
@@ -30,7 +42,7 @@ def snapshot(repo: str | Path, base_ref: str) -> dict[str, Any]:
         "base_commit": base_commit,
         "changed_paths": sorted(paths),
         "working_tree_clean": True,
-        "diff_stat": _git(root, "diff", "--stat", f"{base_commit}...{commit}"),
+        "diff_stat": diff_stat,
     }
     result["integrity_hash"] = sha256_json(result)
     return result
