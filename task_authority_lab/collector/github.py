@@ -30,7 +30,13 @@ def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
     branch = _api(f"repos/{repo}/branches/{base_branch}/protection")
     rulesets = _api(f"repos/{repo}/rulesets?includes_parents=true")
     workflow_permissions = _api(f"repos/{repo}/actions/permissions/workflow")
+    environments = _api(f"repos/{repo}/environments")
     repo_meta = _api(f"repos/{repo}")
+    environments_known = (
+        isinstance(environments, dict)
+        and isinstance(environments.get("total_count"), int)
+        and isinstance(environments.get("environments"), list)
+    )
     output = {
         "repository": repo,
         "base_branch": base_branch,
@@ -39,12 +45,13 @@ def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
         "branch_protection": branch if branch is not None else "UNKNOWN",
         "rulesets": rulesets if rulesets is not None else "UNKNOWN",
         "workflow_permissions": workflow_permissions if workflow_permissions is not None else "UNKNOWN",
+        "environments": environments if environments_known else "UNKNOWN",
         "repository_metadata": {
             "default_branch": repo_meta.get("default_branch"),
             "private": repo_meta.get("private"),
             "permissions": repo_meta.get("permissions"),
         } if isinstance(repo_meta, dict) else "UNKNOWN",
     }
-    output["known"] = all(output[key] != "UNKNOWN" for key in ("branch_protection", "rulesets", "workflow_permissions", "repository_metadata"))
+    output["known"] = all(output[key] != "UNKNOWN" for key in ("branch_protection", "rulesets", "workflow_permissions", "environments", "repository_metadata"))
     output["integrity_hash"] = sha256_json(output)
     return output
