@@ -8,9 +8,35 @@ from task_authority_lab.collector.github import _api, snapshot
 REPO = "example/lab"
 ENVIRONMENTS_PATH = f"repos/{REPO}/environments?per_page=100&page=1"
 RULESETS_PATH = f"repos/{REPO}/rulesets?includes_parents=true&per_page=100"
+RULESET_41_PATH = f"repos/{REPO}/rulesets/41?includes_parents=true"
+RULESET_42_PATH = f"repos/{REPO}/rulesets/42?includes_parents=true"
+
+VALID_RULESET_41 = {
+    "id": 41,
+    "name": "one",
+    "target": "branch",
+    "source_type": "Repository",
+    "source": REPO,
+    "enforcement": "active",
+    "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+    "rules": [{"type": "pull_request", "parameters": {"required_approving_review_count": 1}}]
+}
+VALID_RULESET_42 = {
+    "id": 42,
+    "name": "two",
+    "target": "branch",
+    "source_type": "Repository",
+    "source": REPO,
+    "enforcement": "active",
+    "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+    "rules": [{"type": "required_linear_history"}]
+}
+
 BASE_RESPONSES = {
     f"repos/{REPO}/branches/main/protection": {"required_pull_request_reviews": {"required_approving_review_count": 1}},
-    RULESETS_PATH: [[]],
+    RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}]],
+    RULESET_41_PATH: VALID_RULESET_41,
+    RULESET_42_PATH: VALID_RULESET_42,
     f"repos/{REPO}/actions/permissions/workflow": {"can_approve_pull_request_reviews": False},
     f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"push": True}},
 }
@@ -38,14 +64,21 @@ class GitHubCollectorTests(unittest.TestCase):
     def test_paginated_rulesets_are_combined(self):
         first = {"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}
         second = {"id": 42, "name": "two", "source_type": "Repository", "source": REPO, "enforcement": "active"}
-        responses = {**BASE_RESPONSES, ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
-                     RULESETS_PATH: [[first], [second]]}
+        detail_41 = {**VALID_RULESET_41, **first}
+        detail_42 = {**VALID_RULESET_42, **second}
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESETS_PATH: [[first], [second]],
+            f"repos/{REPO}/rulesets/41?includes_parents=true": detail_41,
+            f"repos/{REPO}/rulesets/42?includes_parents=true": detail_42,
+        }
         with patch("task_authority_lab.collector.github._api",
                    side_effect=lambda route, **kwargs: responses.get(route)) as request:
             result = snapshot(REPO, "main")
         request.assert_any_call(RULESETS_PATH, paginate=True)
         self.assertTrue(result["known"])
-        self.assertEqual(result["rulesets"], [first, second])
+        self.assertEqual(result["rulesets"], [detail_41, detail_42])
 
     def test_malformed_ruleset_pages_fail_closed(self):
         valid = {"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}
@@ -66,6 +99,65 @@ class GitHubCollectorTests(unittest.TestCase):
                 result = snapshot(REPO, "main")
                 self.assertFalse(result["known"])
                 self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_ruleset_detail_read_failure_fails_closed(self):
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESET_41_PATH: None,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_malformed_ruleset_detail_fails_closed(self):
+        for bad_detail in (
+            {"id": 41},
+            {**VALID_RULESET_41, "rules": "not-a-list"},
+            {**VALID_RULESET_41, "enforcement": "unexpected"},
+            {**VALID_RULESET_41, "conditions": "not-a-dict"},
+        ):
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESET_41_PATH: bad_detail,
+            }
+            with self.subTest(bad_detail=bad_detail), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_mismatched_ruleset_identity_fails_closed(self):
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESET_41_PATH: {**VALID_RULESET_41, "id": 999},
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_redacted_ruleset_fields_fail_closed(self):
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESET_41_PATH: {
+                **VALID_RULESET_41,
+                "rules": [{"type": "pull_request", "parameters": {"required_approving_review_count": None}}]
+            },
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["rulesets"], "UNKNOWN")
 
     def test_known_empty_and_present_environments_are_recorded(self):
         for environments in (

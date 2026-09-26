@@ -40,3 +40,15 @@
 At M1, compute real-gate reduction and authority exposure against the native
 baseline. Keep conservative/balanced/permissive alternatives labeled as
 post-experiment counterfactuals, never as a rerun of Policy v0.
+
+## GitHub Native Controls & Ruleset Detail Limitations
+
+The read-only recorder App queries GitHub repository rulesets via `gh api`. While
+`includes_parents=true` permits discovery and detail retrieval of inherited rulesets
+where token permissions allow, organization- or enterprise-level rulesets whose
+scopes are inaccessible to the repository installation token will return `None`
+(inaccessible/404/403). Per design, missing, malformed, inconsistent, inaccessible,
+or materially redacted detail forces `rulesets` to `UNKNOWN` and `native_controls.known`
+to `false`, ensuring fail-closed security. App permissions must remain read-only
+and must not be expanded to bypass access boundaries. Furthermore, API snapshots
+capture point-in-time state rather than historical enforcement proof.
