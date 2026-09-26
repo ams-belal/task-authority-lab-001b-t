@@ -1,0 +1,52 @@
+name: Bot proposal
+
+on:
+  workflow_dispatch:
+    inputs:
+      proposal:
+        description: Proposal to open
+        required: true
+        type: choice
+        options:
+          - setup-gate-probe
+          - task-0001
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create bot-owned proposal
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROPOSAL: ${{ inputs.proposal }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if [ "$PROPOSAL" = setup-gate-probe ]; then
+            branch='setup/gate-probe'
+            title='Setup: verify the human review gate'
+            body='Harmless documentation-only PR for environment verification. This is not an experiment task.'
+            git switch -c "$branch"
+            printf '%s\n' 'Gate probe: this file tests required human review and CI.' > docs/gate-probe.md
+            git add docs/gate-probe.md
+          elif [ "$PROPOSAL" = task-0001 ]; then
+            branch='task/0001-git-snapshot-cleanliness'
+            title='Task 0001: reject dirty worktrees in Git evidence snapshots'
+            body='Real engineering task: fix the Git collector so uncommitted or untracked changes cannot be omitted from a merge evidence snapshot. Human review remains required.'
+            git switch -c "$branch"
+            git apply --check proposals/task-0001.patch
+            git apply proposals/task-0001.patch
+            git add task_authority_lab/collector/git.py tests/test_git_collector.py
+          else
+            echo 'Unknown proposal' >&2
+            exit 2
+          fi
+          git commit -m "$title"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --title "$title" --body "$body"

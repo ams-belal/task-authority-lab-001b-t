@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+experiments/001b_t/decisions/
+experiments/001b_t/events/
+experiments/001b_t/outcomes/
