@@ -16,18 +16,20 @@ def _git(repo: Path, *args: str) -> str:
 
 def snapshot(repo: str | Path, base_ref: str) -> dict[str, Any]:
     root = Path(repo).resolve()
+    status = _git(root, "status", "--porcelain=v1", "--untracked-files=all")
+    if status:
+        raise ValueError("dirty worktree: commit or remove all staged, unstaged, and untracked files before capturing authority evidence")
     branch = _git(root, "branch", "--show-current")
     commit = _git(root, "rev-parse", "HEAD")
     base_commit = _git(root, "rev-parse", base_ref)
     paths = _git(root, "diff", "--name-only", "--no-renames", f"{base_commit}...{commit}").splitlines()
-    status = _git(root, "status", "--porcelain")
     result = {
         "repo": str(root),
         "branch": branch,
         "commit": commit,
         "base_commit": base_commit,
         "changed_paths": sorted(paths),
-        "working_tree_clean": not bool(status),
+        "working_tree_clean": True,
         "diff_stat": _git(root, "diff", "--stat", f"{base_commit}...{commit}"),
     }
     result["integrity_hash"] = sha256_json(result)
