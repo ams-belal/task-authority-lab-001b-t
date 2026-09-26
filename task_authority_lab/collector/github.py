@@ -24,19 +24,86 @@ def _api(path: str) -> dict[str, Any] | list[Any] | None:
         return None
 
 
+def _valid_protection_rule(rule: Any) -> bool:
+    if not isinstance(rule, dict) or type(rule.get("id")) is not int or rule["id"] <= 0:
+        return False
+    kind = rule.get("type")
+    if kind == "wait_timer":
+        return type(rule.get("wait_timer")) is int and rule["wait_timer"] >= 0
+    if kind == "branch_policy":
+        return True
+    if kind == "required_reviewers":
+        if type(rule.get("prevent_self_review")) is not bool:
+            return False
+        reviewers = rule.get("reviewers")
+        if not isinstance(reviewers, list) or not reviewers:
+            return False
+        for entry in reviewers:
+            if not isinstance(entry, dict) or not isinstance(entry.get("reviewer"), dict):
+                return False
+            subject = entry["reviewer"]
+            if type(subject.get("id")) is not int or subject["id"] <= 0:
+                return False
+            if entry.get("type") == "User":
+                if not isinstance(subject.get("login"), str) or not subject["login"]:
+                    return False
+            elif entry.get("type") == "Team":
+                if not isinstance(subject.get("slug"), str) or not subject["slug"]:
+                    return False
+            else:
+                return False
+        return True
+    # Unknown protection-rule types need explicit interpretation before known=true.
+    return False
+
+
+def _complete_environments(value: Any) -> bool:
+    if not isinstance(value, dict) or type(value.get("total_count")) is not int:
+        return False
+    count = value["total_count"]
+    environments = value.get("environments")
+    # We request one page of up to 100. A larger or truncated set is unknown.
+    if count < 0 or count > 100 or not isinstance(environments, list) or len(environments) != count:
+        return False
+    names: set[str] = set()
+    identifiers: set[int] = set()
+    for entry in environments:
+        if not isinstance(entry, dict):
+            return False
+        identifier = entry.get("id")
+        name = entry.get("name")
+        rules = entry.get("protection_rules")
+        policy = entry.get("deployment_branch_policy", ...)
+        if (type(identifier) is not int or identifier <= 0
+                or not isinstance(name, str) or not name.strip()
+                or identifier in identifiers or name.casefold() in names
+                or not isinstance(rules, list) or policy is ...):
+            return False
+        if policy is not None and (
+            not isinstance(policy, dict)
+            or type(policy.get("protected_branches")) is not bool
+            or type(policy.get("custom_branch_policies")) is not bool
+        ):
+            return False
+        # This endpoint exposes the flag, not the custom branch patterns.
+        if policy is not None and policy["custom_branch_policies"]:
+            return False
+        if any(not _valid_protection_rule(rule) for rule in rules):
+            return False
+        names.add(name.casefold())
+        identifiers.add(identifier)
+    return True
+
+
 def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
     if not repo or "/" not in repo or not base_branch:
         raise ValueError("repo must be owner/name and base branch must be given")
     branch = _api(f"repos/{repo}/branches/{base_branch}/protection")
     rulesets = _api(f"repos/{repo}/rulesets?includes_parents=true")
     workflow_permissions = _api(f"repos/{repo}/actions/permissions/workflow")
-    environments = _api(f"repos/{repo}/environments")
+    environments = _api(f"repos/{repo}/environments?per_page=100&page=1")
     repo_meta = _api(f"repos/{repo}")
-    environments_known = (
-        isinstance(environments, dict)
-        and isinstance(environments.get("total_count"), int)
-        and isinstance(environments.get("environments"), list)
-    )
+    environments_known = _complete_environments(environments)
     output = {
         "repository": repo,
         "base_branch": base_branch,
