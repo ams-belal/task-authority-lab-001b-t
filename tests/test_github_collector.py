@@ -18,6 +18,7 @@ VALID_RULESET_41 = {
     "source_type": "Repository",
     "source": REPO,
     "enforcement": "active",
+    "bypass_actors": [{"actor_id": 1, "actor_type": "Integration", "bypass_mode": "always"}],
     "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
     "rules": [{"type": "pull_request", "parameters": {"required_approving_review_count": 1}}]
 }
@@ -28,6 +29,7 @@ VALID_RULESET_42 = {
     "source_type": "Repository",
     "source": REPO,
     "enforcement": "active",
+    "bypass_actors": [],
     "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
     "rules": [{"type": "required_linear_history"}]
 }
@@ -143,6 +145,62 @@ class GitHubCollectorTests(unittest.TestCase):
             result = snapshot(REPO, "main")
         self.assertFalse(result["known"])
         self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_omitted_bypass_actors_fails_closed(self):
+        detail = dict(VALID_RULESET_41)
+        del detail["bypass_actors"]
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESET_41_PATH: detail,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_malformed_bypass_actors_shape_fails_closed(self):
+        for bad_bypass in (
+            "not-a-list",
+            [{"actor_type": ""}],
+            [{"actor_type": "Integration", "bypass_mode": ""}],
+            [{"actor_type": "Integration", "bypass_mode": "always", "actor_id": "not-int"}],
+        ):
+            detail = {**VALID_RULESET_41, "bypass_actors": bad_bypass}
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESET_41_PATH: detail,
+            }
+            with self.subTest(bad_bypass=bad_bypass), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_mismatched_ruleset_detail_fields_fail_closed(self):
+        for mismatch in (
+            {"name": "mismatched-name"},
+            {"source_type": "Organization"},
+            {"source": "other/repo"},
+            {"enforcement": "evaluate"},
+        ):
+            detail = {**VALID_RULESET_41, **mismatch}
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESET_41_PATH: detail,
+            }
+            with self.subTest(mismatch=mismatch), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
 
     def test_redacted_ruleset_fields_fail_closed(self):
         responses = {

@@ -52,27 +52,44 @@ def _complete_rulesets_summary(pages: Any) -> list[dict[str, Any]] | None:
     return rulesets
 
 
-def _valid_ruleset_detail(detail: Any, expected_id: int) -> bool:
+def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
     if not isinstance(detail, dict):
         return False
     identifier = detail.get("id")
-    if type(identifier) is not int or identifier <= 0 or identifier != expected_id:
+    if type(identifier) is not int or identifier <= 0 or identifier != summary.get("id"):
         return False
     name = detail.get("name")
-    if not isinstance(name, str) or not name.strip():
+    if not isinstance(name, str) or not name.strip() or name != summary.get("name"):
         return False
     target = detail.get("target")
     if not isinstance(target, str) or not target.strip():
         return False
     source_type = detail.get("source_type")
-    if not isinstance(source_type, str) or not source_type.strip():
+    if not isinstance(source_type, str) or not source_type.strip() or source_type != summary.get("source_type"):
         return False
     source = detail.get("source")
-    if not isinstance(source, str) or not source.strip():
+    if not isinstance(source, str) or not source.strip() or source != summary.get("source"):
         return False
     enforcement = detail.get("enforcement")
-    if enforcement not in {"active", "evaluate", "disabled"}:
+    if enforcement not in {"active", "evaluate", "disabled"} or enforcement != summary.get("enforcement"):
         return False
+    if "bypass_actors" not in detail:
+        return False
+    bypass_actors = detail.get("bypass_actors")
+    if not isinstance(bypass_actors, list):
+        return False
+    for actor in bypass_actors:
+        if not isinstance(actor, dict):
+            return False
+        actor_type = actor.get("actor_type")
+        if not isinstance(actor_type, str) or not actor_type.strip():
+            return False
+        bypass_mode = actor.get("bypass_mode")
+        if not isinstance(bypass_mode, str) or not bypass_mode.strip():
+            return False
+        actor_id = actor.get("actor_id")
+        if actor_id is not None and not isinstance(actor_id, int):
+            return False
     conditions = detail.get("conditions")
     if not isinstance(conditions, dict):
         return False
@@ -199,7 +216,7 @@ def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
         for summary in rulesets_summary:
             identifier = summary["id"]
             detail = _api(f"repos/{repo}/rulesets/{identifier}?includes_parents=true")
-            if detail is None or not _valid_ruleset_detail(detail, identifier):
+            if detail is None or not _valid_ruleset_detail(detail, summary):
                 all_valid = False
                 break
             detailed_rulesets.append(detail)
