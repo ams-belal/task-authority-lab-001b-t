@@ -1,14 +1,16 @@
+import subprocess
 import unittest
 from unittest.mock import patch
 
-from task_authority_lab.collector.github import snapshot
+from task_authority_lab.collector.github import _api, snapshot
 
 
 REPO = "example/lab"
 ENVIRONMENTS_PATH = f"repos/{REPO}/environments?per_page=100&page=1"
+RULESETS_PATH = f"repos/{REPO}/rulesets?includes_parents=true&per_page=100"
 BASE_RESPONSES = {
     f"repos/{REPO}/branches/main/protection": {"required_pull_request_reviews": {"required_approving_review_count": 1}},
-    f"repos/{REPO}/rulesets?includes_parents=true": [],
+    RULESETS_PATH: [[]],
     f"repos/{REPO}/actions/permissions/workflow": {"can_approve_pull_request_reviews": False},
     f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"push": True}},
 }
@@ -24,6 +26,47 @@ def environment(name="staging", identifier=17, rules=None, branch_policy=None):
 
 
 class GitHubCollectorTests(unittest.TestCase):
+    def test_rulesets_request_uses_all_pages(self):
+        with patch("task_authority_lab.collector.github.subprocess.run",
+                   return_value=subprocess.CompletedProcess([], 0, "[[],[]]", "")) as run:
+            self.assertEqual(_api(RULESETS_PATH, paginate=True), [[], []])
+        run.assert_called_once_with(
+            ["gh", "api", "--paginate", "--slurp", RULESETS_PATH],
+            capture_output=True, text=True,
+        )
+
+    def test_paginated_rulesets_are_combined(self):
+        first = {"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}
+        second = {"id": 42, "name": "two", "source_type": "Repository", "source": REPO, "enforcement": "active"}
+        responses = {**BASE_RESPONSES, ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                     RULESETS_PATH: [[first], [second]]}
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)) as request:
+            result = snapshot(REPO, "main")
+        request.assert_any_call(RULESETS_PATH, paginate=True)
+        self.assertTrue(result["known"])
+        self.assertEqual(result["rulesets"], [first, second])
+
+    def test_malformed_ruleset_pages_fail_closed(self):
+        valid = {"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}
+        for pages in (
+            [valid],  # A raw first page is not proof that later pages were fetched.
+            [[valid], {"message": "later page failed"}],
+            [[valid], [{**valid}]],
+            [[{**valid, "id": True}]],
+            [[{**valid, "name": ""}]],
+            [[{**valid, "enforcement": "unexpected"}]],
+        ):
+            responses = {**BASE_RESPONSES, ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                         RULESETS_PATH: pages}
+            with self.subTest(pages=pages), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
     def test_known_empty_and_present_environments_are_recorded(self):
         for environments in (
             {"total_count": 0, "environments": []},
@@ -39,7 +82,7 @@ class GitHubCollectorTests(unittest.TestCase):
         ):
             with self.subTest(environments=environments), patch(
                 "task_authority_lab.collector.github._api",
-                side_effect=lambda route: {**BASE_RESPONSES, ENVIRONMENTS_PATH: environments}.get(route),
+                side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: environments}.get(route),
             ) as request:
                 result = snapshot(REPO, "main")
                 self.assertTrue(result["known"])
@@ -47,7 +90,7 @@ class GitHubCollectorTests(unittest.TestCase):
                 request.assert_any_call(ENVIRONMENTS_PATH)
 
     def test_inaccessible_environments_fail_closed(self):
-        with patch("task_authority_lab.collector.github._api", side_effect=BASE_RESPONSES.get):
+        with patch("task_authority_lab.collector.github._api", side_effect=lambda route, **kwargs: BASE_RESPONSES.get(route)):
             result = snapshot(REPO, "main")
         self.assertFalse(result["known"])
         self.assertEqual(result["environments"], "UNKNOWN")
@@ -60,7 +103,7 @@ class GitHubCollectorTests(unittest.TestCase):
             }
             with self.subTest(total=total, returned=returned), patch(
                 "task_authority_lab.collector.github._api",
-                side_effect={**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get,
+                side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get(route),
             ):
                 result = snapshot(REPO, "main")
                 self.assertFalse(result["known"])
@@ -81,7 +124,7 @@ class GitHubCollectorTests(unittest.TestCase):
             response = bad_entry if "total_count" in bad_entry else {"total_count": 1, "environments": [bad_entry]}
             with self.subTest(entry=bad_entry), patch(
                 "task_authority_lab.collector.github._api",
-                side_effect={**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get,
+                side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get(route),
             ):
                 result = snapshot(REPO, "main")
                 self.assertFalse(result["known"])

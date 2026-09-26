@@ -14,14 +14,42 @@ from typing import Any
 from ..canonical import sha256_json
 
 
-def _api(path: str) -> dict[str, Any] | list[Any] | None:
-    result = subprocess.run(["gh", "api", path], capture_output=True, text=True)
+def _api(path: str, *, paginate: bool = False) -> dict[str, Any] | list[Any] | None:
+    command = ["gh", "api"]
+    if paginate:
+        command.extend(["--paginate", "--slurp"])
+    command.append(path)
+    result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode:
         return None
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError:
         return None
+
+
+def _complete_rulesets(pages: Any) -> list[dict[str, Any]] | None:
+    # --slurp wraps every API page in an outer list, including one empty page.
+    if not isinstance(pages, list) or not pages:
+        return None
+    rulesets: list[dict[str, Any]] = []
+    identifiers: set[int] = set()
+    for page in pages:
+        if not isinstance(page, list) or len(page) > 100:
+            return None
+        for entry in page:
+            if not isinstance(entry, dict):
+                return None
+            identifier = entry.get("id")
+            if (type(identifier) is not int or identifier <= 0 or identifier in identifiers
+                    or not isinstance(entry.get("name"), str) or not entry["name"].strip()
+                    or not isinstance(entry.get("source_type"), str) or not entry["source_type"]
+                    or not isinstance(entry.get("source"), str) or not entry["source"]
+                    or entry.get("enforcement") not in {"active", "evaluate", "disabled"}):
+                return None
+            identifiers.add(identifier)
+            rulesets.append(entry)
+    return rulesets
 
 
 def _valid_protection_rule(rule: Any) -> bool:
@@ -99,7 +127,8 @@ def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
     if not repo or "/" not in repo or not base_branch:
         raise ValueError("repo must be owner/name and base branch must be given")
     branch = _api(f"repos/{repo}/branches/{base_branch}/protection")
-    rulesets = _api(f"repos/{repo}/rulesets?includes_parents=true")
+    ruleset_pages = _api(f"repos/{repo}/rulesets?includes_parents=true&per_page=100", paginate=True)
+    rulesets = _complete_rulesets(ruleset_pages)
     workflow_permissions = _api(f"repos/{repo}/actions/permissions/workflow")
     environments = _api(f"repos/{repo}/environments?per_page=100&page=1")
     repo_meta = _api(f"repos/{repo}")
