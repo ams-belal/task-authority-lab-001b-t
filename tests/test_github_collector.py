@@ -462,6 +462,107 @@ class GitHubCollectorTests(unittest.TestCase):
         self.assertTrue(result["known"])
         self.assertEqual(result["rulesets"], [valid_combined])
 
+    def test_enterprise_ruleset_targeting_constraints(self):
+        ent_base = {
+            **VALID_RULESET_41,
+            "source_type": "Enterprise",
+            "source": "example/enterprise",
+        }
+        missing_org = {
+            **ent_base,
+            "conditions": {
+                "ref_name": {"include": ["refs/heads/main"], "exclude": []},
+                "repository_name": {"include": ["*"], "exclude": []}
+            }
+        }
+        missing_repo = {
+            **ent_base,
+            "conditions": {
+                "ref_name": {"include": ["refs/heads/main"], "exclude": []},
+                "organization_name": {"include": ["org"], "exclude": []}
+            }
+        }
+        missing_ref_name_branch = {
+            **ent_base,
+            "conditions": {
+                "organization_name": {"include": ["org"], "exclude": []},
+                "repository_name": {"include": ["*"], "exclude": []}
+            }
+        }
+        unsupported_repo_id = {
+            **ent_base,
+            "conditions": {
+                "ref_name": {"include": ["refs/heads/main"], "exclude": []},
+                "organization_name": {"include": ["org"], "exclude": []},
+                "repository_id": {"repository_ids": [1]}
+            }
+        }
+        multiple_org = {
+            **ent_base,
+            "conditions": {
+                "ref_name": {"include": ["refs/heads/main"], "exclude": []},
+                "organization_name": {"include": ["org1"], "exclude": []},
+                "organization_id": {"organization_ids": [1]},
+                "repository_name": {"include": ["*"], "exclude": []}
+            }
+        }
+        malformed_org = {
+            **ent_base,
+            "conditions": {
+                "ref_name": {"include": ["refs/heads/main"], "exclude": []},
+                "organization_id": {"organization_ids": [-1]},
+                "repository_name": {"include": ["*"], "exclude": []}
+            }
+        }
+        valid_branch = {
+            **ent_base,
+            "conditions": {
+                "ref_name": {"include": ["refs/heads/main"], "exclude": []},
+                "organization_name": {"include": ["org"], "exclude": []},
+                "repository_name": {"include": ["*"], "exclude": []}
+            }
+        }
+        valid_repo_target = {
+            **ent_base,
+            "target": "repository",
+            "conditions": {
+                "organization_id": {"organization_ids": [10]},
+                "repository_property": {"property_name": "prop", "source": "custom", "values": ["val"]}
+            }
+        }
+
+        for bad_detail in (missing_org, missing_repo, missing_ref_name_branch, unsupported_repo_id, multiple_org, malformed_org):
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Enterprise", "source": "example/enterprise", "enforcement": "active"}]],
+                RULESET_41_PATH: bad_detail,
+                f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"push": True}},
+            }
+            with self.subTest(detail=bad_detail), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
+        for good_detail in (valid_branch, valid_repo_target):
+            responses_valid = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Enterprise", "source": "example/enterprise", "enforcement": "active"}]],
+                RULESET_41_PATH: good_detail,
+                f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"push": True}},
+            }
+            with self.subTest(detail=good_detail), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses_valid.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["rulesets"], [good_detail])
+
 
 if __name__ == "__main__":
     unittest.main()

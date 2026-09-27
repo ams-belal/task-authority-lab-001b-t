@@ -95,6 +95,7 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
         return False
     has_ref_name = False
     repo_selectors = []
+    org_selectors = []
     for cond_key, cond_val in conditions.items():
         if not isinstance(cond_val, dict):
             return False
@@ -137,21 +138,60 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
                 if not isinstance(values, list) or any(not isinstance(x, str) for x in values):
                     return False
             repo_selectors.append(cond_key)
+        elif cond_key in {"organization_id", "organization_name", "organization_property"}:
+            if cond_key == "organization_id":
+                if not set(cond_val.keys()).issubset({"organization_ids"}):
+                    return False
+                org_ids = cond_val.get("organization_ids")
+                if not isinstance(org_ids, list) or not org_ids or any(type(x) is not int or x <= 0 for x in org_ids):
+                    return False
+            elif cond_key == "organization_name":
+                if not set(cond_val.keys()).issubset({"include", "exclude"}):
+                    return False
+                include = cond_val.get("include")
+                exclude = cond_val.get("exclude")
+                if not isinstance(include, list) or not include or any(not isinstance(x, str) or not x.strip() for x in include):
+                    return False
+                if not isinstance(exclude, list) or any(not isinstance(x, str) for x in exclude):
+                    return False
+            elif cond_key == "organization_property":
+                if not set(cond_val.keys()).issubset({"property_name", "source", "values"}):
+                    return False
+                prop_name = cond_val.get("property_name")
+                prop_source = cond_val.get("source")
+                values = cond_val.get("values")
+                if not isinstance(prop_name, str) or not prop_name.strip():
+                    return False
+                if not isinstance(prop_source, str) or not prop_source.strip():
+                    return False
+                if not isinstance(values, list) or any(not isinstance(x, str) for x in values):
+                    return False
+            org_selectors.append(cond_key)
         else:
             return False
 
     num_repo_selectors = len(repo_selectors)
+    num_org_selectors = len(org_selectors)
     has_valid_targeting = False
     if target in {"branch", "tag"}:
         if source_type == "Repository":
-            if has_ref_name and num_repo_selectors == 0:
+            if has_ref_name and num_repo_selectors == 0 and num_org_selectors == 0:
                 has_valid_targeting = True
-        elif source_type in {"Organization", "Enterprise"}:
-            if has_ref_name and num_repo_selectors == 1:
+        elif source_type == "Organization":
+            if has_ref_name and num_repo_selectors == 1 and num_org_selectors == 0:
+                has_valid_targeting = True
+        elif source_type == "Enterprise":
+            if has_ref_name and num_org_selectors == 1 and num_repo_selectors == 1 and repo_selectors[0] in {"repository_name", "repository_property"}:
                 has_valid_targeting = True
     elif target == "repository":
-        if source_type in {"Repository", "Organization", "Enterprise"}:
-            if not has_ref_name and num_repo_selectors == 1:
+        if source_type == "Repository":
+            if not has_ref_name and num_repo_selectors == 1 and num_org_selectors == 0:
+                has_valid_targeting = True
+        elif source_type == "Organization":
+            if not has_ref_name and num_repo_selectors == 1 and num_org_selectors == 0:
+                has_valid_targeting = True
+        elif source_type == "Enterprise":
+            if not has_ref_name and num_org_selectors == 1 and num_repo_selectors == 1 and repo_selectors[0] in {"repository_name", "repository_property"}:
                 has_valid_targeting = True
 
     if not has_valid_targeting:
