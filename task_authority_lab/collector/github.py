@@ -52,6 +52,42 @@ def _complete_rulesets_summary(pages: Any) -> list[dict[str, Any]] | None:
     return rulesets
 
 
+def _valid_property_selector(cond_val: Any, *, allow_source: bool) -> bool:
+    if not isinstance(cond_val, dict):
+        return False
+    if not set(cond_val.keys()).issubset({"include", "exclude"}):
+        return False
+    include = cond_val.get("include")
+    exclude = cond_val.get("exclude")
+    if include is not None and not isinstance(include, list):
+        return False
+    if exclude is not None and not isinstance(exclude, list):
+        return False
+    if (include is None or not include) and (exclude is None or not exclude):
+        return False
+    for items in (include, exclude):
+        if items is None:
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                return False
+            allowed_keys = {"name", "property_values", "source"} if allow_source else {"name", "property_values"}
+            if not set(item.keys()).issubset(allowed_keys):
+                return False
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                return False
+            prop_values = item.get("property_values")
+            if not isinstance(prop_values, list) or any(not isinstance(x, str) for x in prop_values):
+                return False
+            if allow_source:
+                if "source" in item:
+                    source = item.get("source")
+                    if not isinstance(source, str) or source not in {"custom", "system"}:
+                        return False
+    return True
+
+
 def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
     if not isinstance(detail, dict):
         return False
@@ -126,16 +162,7 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
                 if not isinstance(repo_ids, list) or not repo_ids or any(type(x) is not int or x <= 0 for x in repo_ids):
                     return False
             elif cond_key == "repository_property":
-                if not set(cond_val.keys()).issubset({"property_name", "source", "values"}):
-                    return False
-                prop_name = cond_val.get("property_name")
-                prop_source = cond_val.get("source")
-                values = cond_val.get("values")
-                if not isinstance(prop_name, str) or not prop_name.strip():
-                    return False
-                if not isinstance(prop_source, str) or not prop_source.strip():
-                    return False
-                if not isinstance(values, list) or any(not isinstance(x, str) for x in values):
+                if not _valid_property_selector(cond_val, allow_source=True):
                     return False
             repo_selectors.append(cond_key)
         elif cond_key in {"organization_id", "organization_name", "organization_property"}:
@@ -155,16 +182,7 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
                 if not isinstance(exclude, list) or any(not isinstance(x, str) for x in exclude):
                     return False
             elif cond_key == "organization_property":
-                if not set(cond_val.keys()).issubset({"property_name", "source", "values"}):
-                    return False
-                prop_name = cond_val.get("property_name")
-                prop_source = cond_val.get("source")
-                values = cond_val.get("values")
-                if not isinstance(prop_name, str) or not prop_name.strip():
-                    return False
-                if not isinstance(prop_source, str) or not prop_source.strip():
-                    return False
-                if not isinstance(values, list) or any(not isinstance(x, str) for x in values):
+                if not _valid_property_selector(cond_val, allow_source=False):
                     return False
             org_selectors.append(cond_key)
         else:

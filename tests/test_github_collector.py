@@ -527,11 +527,85 @@ class GitHubCollectorTests(unittest.TestCase):
             "target": "repository",
             "conditions": {
                 "organization_id": {"organization_ids": [10]},
-                "repository_property": {"property_name": "prop", "source": "custom", "values": ["val"]}
+                "repository_property": {
+                    "include": [
+                        {"name": "prop", "source": "custom", "property_values": ["val"]}
+                    ]
+                }
             }
         }
+        valid_org_property_target = {
+            **ent_base,
+            "target": "repository",
+            "conditions": {
+                "organization_property": {
+                    "include": [
+                        {"name": "org_prop", "property_values": ["org_val"]}
+                    ]
+                },
+                "repository_name": {"include": ["*"], "exclude": []}
+            }
+        }
+        malformed_property_selectors = [
+            {
+                **ent_base,
+                "target": "repository",
+                "conditions": {
+                    "organization_id": {"organization_ids": [10]},
+                    "repository_property": {"property_name": "prop", "source": "custom", "values": ["val"]}
+                }
+            },
+            {
+                **ent_base,
+                "target": "repository",
+                "conditions": {
+                    "organization_id": {"organization_ids": [10]},
+                    "repository_property": {"include": [{"property_values": ["val"]}]}
+                }
+            },
+            {
+                **ent_base,
+                "target": "repository",
+                "conditions": {
+                    "organization_id": {"organization_ids": [10]},
+                    "repository_property": {"include": [{"name": "prop"}]}
+                }
+            },
+            {
+                **ent_base,
+                "target": "repository",
+                "conditions": {
+                    "organization_id": {"organization_ids": [10]},
+                    "repository_property": {"include": [{"name": "prop", "property_values": "not-list"}]}
+                }
+            },
+            {
+                **ent_base,
+                "target": "repository",
+                "conditions": {
+                    "organization_id": {"organization_ids": [10]},
+                    "repository_property": {"include": [{"name": "prop", "source": "invalid", "property_values": ["val"]}]}
+                }
+            },
+            {
+                **ent_base,
+                "target": "repository",
+                "conditions": {
+                    "organization_id": {"organization_ids": [10]},
+                    "organization_property": {"include": [{"name": "prop", "source": "custom", "property_values": ["val"]}]}
+                }
+            },
+            {
+                **ent_base,
+                "target": "repository",
+                "conditions": {
+                    "organization_id": {"organization_ids": [10]},
+                    "repository_property": {"include": []}
+                }
+            },
+        ]
 
-        for bad_detail in (missing_org, missing_repo, missing_ref_name_branch, unsupported_repo_id, multiple_org, malformed_org):
+        for bad_detail in (missing_org, missing_repo, missing_ref_name_branch, unsupported_repo_id, multiple_org, malformed_org, *malformed_property_selectors):
             responses = {
                 **BASE_RESPONSES,
                 ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
@@ -547,7 +621,7 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["rulesets"], "UNKNOWN")
 
-        for good_detail in (valid_branch, valid_repo_target):
+        for good_detail in (valid_branch, valid_repo_target, valid_org_property_target):
             responses_valid = {
                 **BASE_RESPONSES,
                 ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
