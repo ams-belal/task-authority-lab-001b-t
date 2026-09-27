@@ -91,18 +91,21 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
         if actor_id is not None and not isinstance(actor_id, int):
             return False
     conditions = detail.get("conditions")
-    if not isinstance(conditions, dict):
-        return False
-    ref_name = conditions.get("ref_name")
-    if ref_name is not None:
-        if not isinstance(ref_name, dict):
+    if conditions is not None:
+        if not isinstance(conditions, dict):
             return False
-        include = ref_name.get("include")
-        exclude = ref_name.get("exclude")
-        if include is not None and (not isinstance(include, list) or any(not isinstance(x, str) for x in include)):
-            return False
-        if exclude is not None and (not isinstance(exclude, list) or any(not isinstance(x, str) for x in exclude)):
-            return False
+        for cond_key, cond_val in conditions.items():
+            if cond_key == "ref_name":
+                if not isinstance(cond_val, dict):
+                    return False
+                include = cond_val.get("include")
+                exclude = cond_val.get("exclude")
+                if include is not None and (not isinstance(include, list) or any(not isinstance(x, str) for x in include)):
+                    return False
+                if exclude is not None and (not isinstance(exclude, list) or any(not isinstance(x, str) for x in exclude)):
+                    return False
+            else:
+                return False
 
     rules = detail.get("rules")
     if not isinstance(rules, list):
@@ -114,21 +117,47 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
         if not isinstance(rule_type, str) or not rule_type.strip():
             return False
         parameters = rule.get("parameters")
-        if parameters is not None:
+        if rule_type == "pull_request":
             if not isinstance(parameters, dict):
                 return False
-            if rule_type == "pull_request":
-                approvals = parameters.get("required_approving_review_count")
-                if approvals is not None:
-                    if type(approvals) is not int or approvals < 0:
-                        return False
-                for param_key in ("dismiss_stale_reviews_on_push", "require_code_owner_review", "required_review_thread_resolution"):
-                    val = parameters.get(param_key)
-                    if val is not None and type(val) is not bool:
-                        return False
-            for k, v in parameters.items():
-                if v is None and k in {"required_approving_review_count", "required_status_checks"}:
+            approvals = parameters.get("required_approving_review_count")
+            if type(approvals) is not int or approvals < 0:
+                return False
+            last_push = parameters.get("require_last_push_approval")
+            if type(last_push) is not bool:
+                return False
+            dismiss_stale = parameters.get("dismiss_stale_reviews_on_push")
+            if type(dismiss_stale) is not bool:
+                return False
+            code_owner = parameters.get("require_code_owner_review")
+            if type(code_owner) is not bool:
+                return False
+            thread_res = parameters.get("required_review_thread_resolution")
+            if type(thread_res) is not bool:
+                return False
+        elif rule_type == "required_status_checks":
+            if not isinstance(parameters, dict):
+                return False
+            status_checks = parameters.get("required_status_checks")
+            if not isinstance(status_checks, list):
+                return False
+            for check in status_checks:
+                if not isinstance(check, dict):
                     return False
+                context = check.get("context")
+                if not isinstance(context, str) or not context.strip():
+                    return False
+                integration_id = check.get("integration_id")
+                if integration_id is not None and type(integration_id) is not int:
+                    return False
+            strict = parameters.get("strict_required_status_checks_policy")
+            if type(strict) is not bool:
+                return False
+        elif rule_type == "required_linear_history":
+            if parameters is not None and not isinstance(parameters, dict):
+                return False
+        else:
+            return False
     return True
 
 

@@ -20,7 +20,13 @@ VALID_RULESET_41 = {
     "enforcement": "active",
     "bypass_actors": [{"actor_id": 1, "actor_type": "Integration", "bypass_mode": "always"}],
     "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
-    "rules": [{"type": "pull_request", "parameters": {"required_approving_review_count": 1}}]
+    "rules": [{"type": "pull_request", "parameters": {
+        "required_approving_review_count": 1,
+        "require_last_push_approval": False,
+        "dismiss_stale_reviews_on_push": True,
+        "require_code_owner_review": True,
+        "required_review_thread_resolution": True,
+    }}]
 }
 VALID_RULESET_42 = {
     "id": 42,
@@ -279,6 +285,105 @@ class GitHubCollectorTests(unittest.TestCase):
                 result = snapshot(REPO, "main")
                 self.assertFalse(result["known"])
                 self.assertEqual(result["environments"], "UNKNOWN")
+
+    def test_omitted_pull_request_effective_gate_fields_fail_closed(self):
+        for bad_params in (
+            {},
+            {"required_approving_review_count": 1},
+            {"required_approving_review_count": 1, "require_last_push_approval": False},
+        ):
+            detail = {**VALID_RULESET_41, "rules": [{"type": "pull_request", "parameters": bad_params}]}
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESET_41_PATH: detail,
+            }
+            with self.subTest(bad_params=bad_params), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_omitted_required_status_checks_fields_fail_closed(self):
+        for bad_params in (
+            {},
+            {"required_status_checks": [{"context": "ci"}]},
+            {"strict_required_status_checks_policy": True},
+        ):
+            detail = {
+                **VALID_RULESET_41,
+                "rules": [{"type": "required_status_checks", "parameters": bad_params}]
+            }
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESET_41_PATH: detail,
+            }
+            with self.subTest(bad_params=bad_params), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_omitted_targeting_conditions_succeeds(self):
+        detail = dict(VALID_RULESET_41)
+        detail["conditions"] = None
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}]],
+            RULESET_41_PATH: detail,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertTrue(result["known"])
+        self.assertEqual(result["rulesets"], [detail])
+
+    def test_unsupported_rule_or_condition_shapes_fail_closed(self):
+        for bad_rule_or_cond in (
+            {**VALID_RULESET_41, "rules": [{"type": "unsupported_rule_type"}]},
+            {**VALID_RULESET_41, "conditions": {"unsupported_condition": {}}},
+        ):
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESET_41_PATH: bad_rule_or_cond,
+            }
+            with self.subTest(bad=bad_rule_or_cond), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_representative_valid_details_succeed(self):
+        valid_status_checks_detail = {
+            **VALID_RULESET_41,
+            "rules": [{
+                "type": "required_status_checks",
+                "parameters": {
+                    "required_status_checks": [{"context": "ci/test", "integration_id": 123}],
+                    "strict_required_status_checks_policy": True
+                }
+            }]
+        }
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}]],
+            RULESET_41_PATH: valid_status_checks_detail,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertTrue(result["known"])
+        self.assertEqual(result["rulesets"], [valid_status_checks_detail])
 
 
 if __name__ == "__main__":
