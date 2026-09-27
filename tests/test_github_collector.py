@@ -637,6 +637,52 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertTrue(result["known"])
                 self.assertEqual(result["rulesets"], [good_detail])
 
+    def test_valid_repository_metadata_succeeds(self):
+        valid_meta = {"default_branch": "main", "private": False, "permissions": {"push": True, "admin": False}}
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            f"repos/{REPO}": valid_meta,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertTrue(result["known"])
+        self.assertEqual(result["repository_metadata"], valid_meta)
+
+    def test_malformed_or_absent_repository_metadata_fails_closed(self):
+        bad_metas = (
+            None,
+            {},
+            {"default_branch": None, "private": False, "permissions": {"push": True}},
+            {"default_branch": "", "private": False, "permissions": {"push": True}},
+            {"default_branch": "   ", "private": False, "permissions": {"push": True}},
+            {"default_branch": 123, "private": False, "permissions": {"push": True}},
+            {"default_branch": "main", "private": "false", "permissions": {"push": True}},
+            {"default_branch": "main", "private": None, "permissions": {"push": True}},
+            {"default_branch": "main", "private": 0, "permissions": {"push": True}},
+            {"default_branch": "main", "private": False, "permissions": "not-a-dict"},
+            {"default_branch": "main", "private": False, "permissions": {"push": "true"}},
+            {"default_branch": "main", "private": False, "permissions": {"push": 1}},
+            {"default_branch": "main", "private": False, "permissions": {"push": None}},
+            {"default_branch": "main", "private": False},
+            {"default_branch": "main", "permissions": {"push": True}},
+            {"private": False, "permissions": {"push": True}},
+        )
+        for bad_meta in bad_metas:
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                f"repos/{REPO}": bad_meta,
+            }
+            with self.subTest(bad_meta=bad_meta), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["repository_metadata"], "UNKNOWN")
+
 
 if __name__ == "__main__":
     unittest.main()

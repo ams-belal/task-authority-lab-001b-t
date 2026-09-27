@@ -57,6 +57,10 @@ Absent, omitted, or unsupported targeting semantics must fail closed. Furthermor
 (such as `pull_request` and `required_status_checks`) must specify complete effective gate parameters
 and control-defining fields. Missing, malformed, inconsistent, inaccessible, or materially redacted
 detail—as well as any unsupported rule or condition shapes—forces `rulesets` to `UNKNOWN` and
-`native_controls.known` to `false`, ensuring fail-closed security. App permissions must remain
+`native_controls.known` to `false`, ensuring fail-closed security. Similarly, repository metadata
+fetched via `GET /repos/{owner}/{repo}` must be structurally complete and valid: `default_branch`
+must be a non-empty string, `private` must be a boolean flag, and `permissions` must be a dictionary
+of boolean effective permission values. Absent, omitted, or malformed repository metadata fields
+must force `repository_metadata` to `UNKNOWN` and `native_controls.known` to `false`. App permissions must remain
 read-only and must not be expanded to bypass access boundaries. Furthermore, API snapshots capture
 point-in-time state rather than historical enforcement proof.
