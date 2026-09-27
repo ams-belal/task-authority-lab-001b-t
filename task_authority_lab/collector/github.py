@@ -62,10 +62,10 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
     if not isinstance(name, str) or not name.strip() or name != summary.get("name"):
         return False
     target = detail.get("target")
-    if not isinstance(target, str) or not target.strip():
+    if not isinstance(target, str) or target not in {"branch", "tag", "repository"}:
         return False
     source_type = detail.get("source_type")
-    if not isinstance(source_type, str) or not source_type.strip() or source_type != summary.get("source_type"):
+    if not isinstance(source_type, str) or source_type not in {"Repository", "Organization", "Enterprise"} or source_type != summary.get("source_type"):
         return False
     source = detail.get("source")
     if not isinstance(source, str) or not source.strip() or source != summary.get("source"):
@@ -91,21 +91,51 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
         if actor_id is not None and not isinstance(actor_id, int):
             return False
     conditions = detail.get("conditions")
-    if conditions is not None:
-        if not isinstance(conditions, dict):
-            return False
-        for cond_key, cond_val in conditions.items():
-            if cond_key == "ref_name":
-                if not isinstance(cond_val, dict):
-                    return False
+    if not isinstance(conditions, dict) or not conditions:
+        return False
+    has_valid_targeting = False
+    for cond_key, cond_val in conditions.items():
+        if cond_key == "ref_name":
+            if not isinstance(cond_val, dict):
+                return False
+            include = cond_val.get("include")
+            exclude = cond_val.get("exclude")
+            if not isinstance(include, list) or not include or any(not isinstance(x, str) or not x.strip() for x in include):
+                return False
+            if not isinstance(exclude, list) or any(not isinstance(x, str) for x in exclude):
+                return False
+            if target in {"branch", "tag"}:
+                has_valid_targeting = True
+        elif cond_key in {"repository_name", "repository_id", "repository_property"}:
+            if not isinstance(cond_val, dict):
+                return False
+            if cond_key == "repository_name":
                 include = cond_val.get("include")
                 exclude = cond_val.get("exclude")
-                if include is not None and (not isinstance(include, list) or any(not isinstance(x, str) for x in include)):
+                if not isinstance(include, list) or not include or any(not isinstance(x, str) or not x.strip() for x in include):
                     return False
-                if exclude is not None and (not isinstance(exclude, list) or any(not isinstance(x, str) for x in exclude)):
+                if not isinstance(exclude, list) or any(not isinstance(x, str) for x in exclude):
                     return False
-            else:
-                return False
+            elif cond_key == "repository_id":
+                repo_ids = cond_val.get("repository_ids")
+                if not isinstance(repo_ids, list) or not repo_ids or any(type(x) is not int or x <= 0 for x in repo_ids):
+                    return False
+            elif cond_key == "repository_property":
+                prop_name = cond_val.get("property_name")
+                prop_source = cond_val.get("source")
+                values = cond_val.get("values")
+                if not isinstance(prop_name, str) or not prop_name.strip():
+                    return False
+                if not isinstance(prop_source, str) or not prop_source.strip():
+                    return False
+                if not isinstance(values, list) or any(not isinstance(x, str) for x in values):
+                    return False
+            if target == "repository":
+                has_valid_targeting = True
+        else:
+            return False
+    if not has_valid_targeting:
+        return False
 
     rules = detail.get("rules")
     if not isinstance(rules, list):

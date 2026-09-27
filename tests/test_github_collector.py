@@ -329,20 +329,31 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["rulesets"], "UNKNOWN")
 
-    def test_omitted_targeting_conditions_succeeds(self):
-        detail = dict(VALID_RULESET_41)
-        detail["conditions"] = None
-        responses = {
-            **BASE_RESPONSES,
-            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
-            RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}]],
-            RULESET_41_PATH: detail,
-        }
-        with patch("task_authority_lab.collector.github._api",
-                   side_effect=lambda route, **kwargs: responses.get(route)):
-            result = snapshot(REPO, "main")
-        self.assertTrue(result["known"])
-        self.assertEqual(result["rulesets"], [detail])
+    def test_omitted_or_malformed_targeting_conditions_fail_closed(self):
+        for bad_conditions in (
+            None,
+            {},
+            {"other_condition": {"include": ["refs/heads/main"], "exclude": []}},
+            {"ref_name": {}},
+            {"ref_name": {"exclude": []}},
+            {"ref_name": {"include": [], "exclude": []}},
+            {"ref_name": {"include": [""], "exclude": []}},
+            {"ref_name": {"include": [123], "exclude": []}},
+            {"ref_name": {"include": ["refs/heads/main"], "exclude": [123]}},
+        ):
+            detail = {**VALID_RULESET_41, "conditions": bad_conditions}
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESET_41_PATH: detail,
+            }
+            with self.subTest(bad_conditions=bad_conditions), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
 
     def test_unsupported_rule_or_condition_shapes_fail_closed(self):
         for bad_rule_or_cond in (

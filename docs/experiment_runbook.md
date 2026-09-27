@@ -47,11 +47,12 @@ The read-only recorder App queries GitHub repository rulesets via `gh api`. Whil
 `includes_parents=true` permits discovery and detail retrieval of inherited rulesets
 where token permissions allow, organization- or enterprise-level rulesets whose
 scopes are inaccessible to the repository installation token will return `None`
-(inaccessible/404/403). Inherited organization rulesets may omit ref-name targeting
-conditions; however, all encountered rules (such as `pull_request` and `required_status_checks`)
-must specify complete effective gate parameters and control-defining fields. Missing, malformed,
-inconsistent, inaccessible, or materially redacted detail—as well as any unsupported rule or
-condition shapes—forces `rulesets` to `UNKNOWN` and `native_controls.known` to `false`,
-ensuring fail-closed security. App permissions must remain read-only and must not be
-expanded to bypass access boundaries. Furthermore, API snapshots capture point-in-time
-state rather than historical enforcement proof.
+(inaccessible/404/403). Repository, organization, and enterprise rulesets require complete,
+structurally valid ref-name or repository targeting conditions (including include and exclude arrays);
+absent, omitted, or unsupported targeting semantics must fail closed. Furthermore, all encountered rules
+(such as `pull_request` and `required_status_checks`) must specify complete effective gate parameters
+and control-defining fields. Missing, malformed, inconsistent, inaccessible, or materially redacted
+detail—as well as any unsupported rule or condition shapes—forces `rulesets` to `UNKNOWN` and
+`native_controls.known` to `false`, ensuring fail-closed security. App permissions must remain
+read-only and must not be expanded to bypass access boundaries. Furthermore, API snapshots capture
+point-in-time state rather than historical enforcement proof.
