@@ -93,10 +93,13 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
     conditions = detail.get("conditions")
     if not isinstance(conditions, dict) or not conditions:
         return False
-    has_valid_targeting = False
+    has_ref_name = False
+    repo_selectors = []
     for cond_key, cond_val in conditions.items():
+        if not isinstance(cond_val, dict):
+            return False
         if cond_key == "ref_name":
-            if not isinstance(cond_val, dict):
+            if not set(cond_val.keys()).issubset({"include", "exclude"}):
                 return False
             include = cond_val.get("include")
             exclude = cond_val.get("exclude")
@@ -104,12 +107,11 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
                 return False
             if not isinstance(exclude, list) or any(not isinstance(x, str) for x in exclude):
                 return False
-            if target in {"branch", "tag"}:
-                has_valid_targeting = True
+            has_ref_name = True
         elif cond_key in {"repository_name", "repository_id", "repository_property"}:
-            if not isinstance(cond_val, dict):
-                return False
             if cond_key == "repository_name":
+                if not set(cond_val.keys()).issubset({"include", "exclude"}):
+                    return False
                 include = cond_val.get("include")
                 exclude = cond_val.get("exclude")
                 if not isinstance(include, list) or not include or any(not isinstance(x, str) or not x.strip() for x in include):
@@ -117,10 +119,14 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
                 if not isinstance(exclude, list) or any(not isinstance(x, str) for x in exclude):
                     return False
             elif cond_key == "repository_id":
+                if not set(cond_val.keys()).issubset({"repository_ids"}):
+                    return False
                 repo_ids = cond_val.get("repository_ids")
                 if not isinstance(repo_ids, list) or not repo_ids or any(type(x) is not int or x <= 0 for x in repo_ids):
                     return False
             elif cond_key == "repository_property":
+                if not set(cond_val.keys()).issubset({"property_name", "source", "values"}):
+                    return False
                 prop_name = cond_val.get("property_name")
                 prop_source = cond_val.get("source")
                 values = cond_val.get("values")
@@ -130,10 +136,24 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
                     return False
                 if not isinstance(values, list) or any(not isinstance(x, str) for x in values):
                     return False
-            if target == "repository":
-                has_valid_targeting = True
+            repo_selectors.append(cond_key)
         else:
             return False
+
+    num_repo_selectors = len(repo_selectors)
+    has_valid_targeting = False
+    if target in {"branch", "tag"}:
+        if source_type == "Repository":
+            if has_ref_name and num_repo_selectors == 0:
+                has_valid_targeting = True
+        elif source_type in {"Organization", "Enterprise"}:
+            if has_ref_name and num_repo_selectors == 1:
+                has_valid_targeting = True
+    elif target == "repository":
+        if source_type in {"Repository", "Organization", "Enterprise"}:
+            if not has_ref_name and num_repo_selectors == 1:
+                has_valid_targeting = True
+
     if not has_valid_targeting:
         return False
 
