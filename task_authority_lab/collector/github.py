@@ -350,7 +350,15 @@ def _complete_repository_metadata(value: Any) -> bool:
     if type(private) is not bool:
         return False
     permissions = value.get("permissions")
-    if not isinstance(permissions, dict) or any(type(v) is not bool for v in permissions.values()):
+    if not isinstance(permissions, dict):
+        return False
+    core_permissions = {"pull", "push", "admin"}
+    if not core_permissions.issubset(permissions.keys()):
+        return False
+    allowed_permissions = {"pull", "push", "admin", "maintain", "triage"}
+    if not set(permissions.keys()).issubset(allowed_permissions):
+        return False
+    if any(type(v) is not bool for v in permissions.values()):
         return False
     return True
 
