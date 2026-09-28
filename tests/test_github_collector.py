@@ -45,7 +45,7 @@ BASE_RESPONSES = {
     RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}]],
     RULESET_41_PATH: VALID_RULESET_41,
     RULESET_42_PATH: VALID_RULESET_42,
-    f"repos/{REPO}/actions/permissions/workflow": {"can_approve_pull_request_reviews": False},
+    f"repos/{REPO}/actions/permissions/workflow": {"default_workflow_permissions": "read", "can_approve_pull_request_reviews": False},
     f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
 }
 
@@ -692,6 +692,56 @@ class GitHubCollectorTests(unittest.TestCase):
                 result = snapshot(REPO, "main")
                 self.assertFalse(result["known"])
                 self.assertEqual(result["repository_metadata"], "UNKNOWN")
+
+    def test_valid_workflow_permissions_succeeds(self):
+        for valid_wf in (
+            {"default_workflow_permissions": "read", "can_approve_pull_request_reviews": False},
+            {"default_workflow_permissions": "write", "can_approve_pull_request_reviews": True},
+        ):
+            workflow_path = f"repos/{REPO}/actions/permissions/workflow"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                workflow_path: valid_wf,
+            }
+            with self.subTest(valid_wf=valid_wf), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["workflow_permissions"], valid_wf)
+
+    def test_malformed_or_absent_workflow_permissions_fails_closed(self):
+        bad_wfs = (
+            None,
+            {},
+            {"can_approve_pull_request_reviews": False},
+            {"default_workflow_permissions": "read"},
+            {"default_workflow_permissions": "none", "can_approve_pull_request_reviews": False},
+            {"default_workflow_permissions": "invalid", "can_approve_pull_request_reviews": False},
+            {"default_workflow_permissions": 123, "can_approve_pull_request_reviews": False},
+            {"default_workflow_permissions": None, "can_approve_pull_request_reviews": False},
+            {"default_workflow_permissions": "read", "can_approve_pull_request_reviews": "false"},
+            {"default_workflow_permissions": "read", "can_approve_pull_request_reviews": 0},
+            {"default_workflow_permissions": "read", "can_approve_pull_request_reviews": None},
+            {"default_workflow_permissions": "read", "can_approve_pull_request_reviews": False, "extra": True},
+            "not-a-dict",
+        )
+        for bad_wf in bad_wfs:
+            workflow_path = f"repos/{REPO}/actions/permissions/workflow"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                workflow_path: bad_wf,
+            }
+            with self.subTest(bad_wf=bad_wf), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["workflow_permissions"], "UNKNOWN")
 
 
 if __name__ == "__main__":
