@@ -45,6 +45,7 @@ VALID_BRANCH_PROTECTION = {
         "required_approving_review_count": 1,
         "dismiss_stale_reviews": False,
         "require_code_owner_reviews": False,
+        "require_last_push_approval": False,
     },
     "required_status_checks": {
         "strict": True,
@@ -762,7 +763,7 @@ class GitHubCollectorTests(unittest.TestCase):
         for valid_bp in (
             VALID_BRANCH_PROTECTION,
             {
-                "required_pull_request_reviews": {"required_approving_review_count": 2, "dismiss_stale_reviews": True, "require_code_owner_reviews": True},
+                "required_pull_request_reviews": {"required_approving_review_count": 2, "dismiss_stale_reviews": True, "require_code_owner_reviews": True, "require_last_push_approval": False},
                 "required_status_checks": {"strict": False, "contexts": ["build"]},
                 "enforce_admins": {"enabled": True},
             },
@@ -803,7 +804,22 @@ class GitHubCollectorTests(unittest.TestCase):
                 "enforce_admins": {"enabled": True},
             },
             {
-                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False}, # missing require_last_push_approval
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False, "require_last_push_approval": "true"}, # malformed type
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False, "require_last_push_approval": None}, # malformed type
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False, "require_last_push_approval": False},
                 "required_status_checks": {"checks": [{"context": "ci"}]}, # missing strict
                 "enforce_admins": {"enabled": True},
             },

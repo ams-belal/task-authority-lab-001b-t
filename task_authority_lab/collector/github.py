@@ -421,7 +421,10 @@ def _complete_branch_protection(value: Any) -> bool:
     code_owner = pr.get("require_code_owner_reviews")
     if type(code_owner) is not bool:
         return False
-    for k in ("require_last_push_approval", "required_review_thread_resolution"):
+    last_push = pr.get("require_last_push_approval")
+    if type(last_push) is not bool:
+        return False
+    for k in ("required_review_thread_resolution",):
         if k in pr and type(pr[k]) is not bool:
             return False
     for k in ("dismissal_restrictions", "bypass_pull_request_allowances", "url"):
