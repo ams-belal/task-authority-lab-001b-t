@@ -40,8 +40,23 @@ VALID_RULESET_42 = {
     "rules": [{"type": "required_linear_history"}]
 }
 
+VALID_BRANCH_PROTECTION = {
+    "required_pull_request_reviews": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews": False,
+        "require_code_owner_reviews": False,
+    },
+    "required_status_checks": {
+        "strict": True,
+        "checks": [{"context": "ci"}],
+    },
+    "enforce_admins": {
+        "enabled": True,
+    },
+}
+
 BASE_RESPONSES = {
-    f"repos/{REPO}/branches/main/protection": {"required_pull_request_reviews": {"required_approving_review_count": 1}},
+    f"repos/{REPO}/branches/main/protection": VALID_BRANCH_PROTECTION,
     RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}]],
     RULESET_41_PATH: VALID_RULESET_41,
     RULESET_42_PATH: VALID_RULESET_42,
@@ -745,13 +760,18 @@ class GitHubCollectorTests(unittest.TestCase):
 
     def test_valid_branch_protection_succeeds(self):
         for valid_bp in (
-            {"required_pull_request_reviews": {"required_approving_review_count": 1}},
-            {"required_status_checks": {"strict": True, "checks": [{"context": "ci"}]}},
-            {"enforce_admins": {"enabled": True}},
+            VALID_BRANCH_PROTECTION,
             {
-                "required_pull_request_reviews": {"required_approving_review_count": 2, "dismiss_stale_reviews": True},
+                "required_pull_request_reviews": {"required_approving_review_count": 2, "dismiss_stale_reviews": True, "require_code_owner_reviews": True},
                 "required_status_checks": {"strict": False, "contexts": ["build"]},
                 "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False, "require_last_push_approval": True},
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci", "app_id": 123}]},
+                "enforce_admins": {"enabled": False, "url": "https://api.github.com/..."},
+                "required_linear_history": {"enabled": True},
+                "allow_force_pushes": False,
             },
         ):
             bp_path = f"repos/{REPO}/branches/main/protection"
@@ -772,16 +792,57 @@ class GitHubCollectorTests(unittest.TestCase):
         bad_bps = (
             {},
             None,
-            {"required_pull_request_reviews": {"required_approving_review_count": "1"}},
-            {"required_pull_request_reviews": {}},
-            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": "yes"}},
-            {"required_status_checks": {}},
-            {"required_status_checks": {"strict": "true"}},
-            {"required_status_checks": {"strict": True, "checks": "not-a-list"}},
-            {"required_status_checks": {"strict": True, "checks": [{"context": ""}]}},
-            {"enforce_admins": {"enabled": "true"}},
-            {"enforce_admins": "true"},
-            {"unknown_control": True},
+            # Partial shapes demonstrated in defect description
+            {"enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1}},
+            {"required_status_checks": {"strict": True, "checks": [{"context": "ci"}]}},
+            # Missing required nested fields or subsections
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1}, # missing dismiss_stale_reviews, require_code_owner_reviews
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+                "required_status_checks": {"checks": [{"context": "ci"}]}, # missing strict
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {}, # missing enabled
+            },
+            {"required_pull_request_reviews": {"required_approving_review_count": "1", "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": "yes", "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": "true", "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": "not-a-list"},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": ""}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": "true"}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": True},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True},
+             "unknown_control": True},
             "not-a-dict",
         )
         for bad_bp in bad_bps:

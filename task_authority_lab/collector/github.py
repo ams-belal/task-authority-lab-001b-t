@@ -405,63 +405,66 @@ def _complete_branch_protection(value: Any) -> bool:
     if not set(value.keys()).issubset(allowed_keys):
         return False
 
-    has_control = False
+    required_core_keys = {"required_pull_request_reviews", "required_status_checks", "enforce_admins"}
+    if not required_core_keys.issubset(value.keys()):
+        return False
 
-    if "required_pull_request_reviews" in value:
-        pr = value.get("required_pull_request_reviews")
-        if not isinstance(pr, dict):
+    pr = value.get("required_pull_request_reviews")
+    if not isinstance(pr, dict):
+        return False
+    approvals = pr.get("required_approving_review_count")
+    if type(approvals) is not int or approvals < 0:
+        return False
+    dismiss_stale = pr.get("dismiss_stale_reviews")
+    if type(dismiss_stale) is not bool:
+        return False
+    code_owner = pr.get("require_code_owner_reviews")
+    if type(code_owner) is not bool:
+        return False
+    for k in ("require_last_push_approval", "required_review_thread_resolution"):
+        if k in pr and type(pr[k]) is not bool:
             return False
-        approvals = pr.get("required_approving_review_count")
-        if type(approvals) is not int or approvals < 0:
+    for k in ("dismissal_restrictions", "bypass_pull_request_allowances", "url"):
+        if k in pr and pr[k] is not None and not isinstance(pr[k], (dict, str, list)):
             return False
-        for k in ("dismiss_stale_reviews", "require_code_owner_reviews", "require_last_push_approval", "required_review_thread_resolution"):
-            if k in pr and type(pr[k]) is not bool:
-                return False
-        for k in ("dismissal_restrictions", "bypass_pull_request_allowances", "url"):
-            if k in pr and pr[k] is not None and not isinstance(pr[k], (dict, str, list)):
-                return False
-        has_control = True
 
-    if "required_status_checks" in value:
-        sc = value.get("required_status_checks")
-        if not isinstance(sc, dict):
+    sc = value.get("required_status_checks")
+    if not isinstance(sc, dict):
+        return False
+    strict = sc.get("strict")
+    if type(strict) is not bool:
+        return False
+    checks = sc.get("checks")
+    if checks is not None:
+        if not isinstance(checks, list):
             return False
-        strict = sc.get("strict")
-        if type(strict) is not bool:
-            return False
-        checks = sc.get("checks")
-        if checks is not None:
-            if not isinstance(checks, list):
+        for check in checks:
+            if not isinstance(check, dict):
                 return False
-            for check in checks:
-                if not isinstance(check, dict):
-                    return False
-                context = check.get("context")
-                if not isinstance(context, str) or not context.strip():
-                    return False
-                app_id = check.get("app_id")
-                if app_id is not None and type(app_id) is not int:
-                    return False
-        contexts = sc.get("contexts")
-        if contexts is not None:
-            if not isinstance(contexts, list):
+            context = check.get("context")
+            if not isinstance(context, str) or not context.strip():
                 return False
-            for ctx in contexts:
-                if not isinstance(ctx, str) or not ctx.strip():
-                    return False
-        if checks is None and contexts is None:
+            app_id = check.get("app_id")
+            if app_id is not None and type(app_id) is not int:
+                return False
+    contexts = sc.get("contexts")
+    if contexts is not None:
+        if not isinstance(contexts, list):
             return False
-        has_control = True
+        for ctx in contexts:
+            if not isinstance(ctx, str) or not ctx.strip():
+                return False
+    if checks is None and contexts is None:
+        return False
 
-    if "enforce_admins" in value:
-        ea = value.get("enforce_admins")
-        if isinstance(ea, dict):
-            enabled = ea.get("enabled")
-            if type(enabled) is not bool:
-                return False
-        elif type(ea) is not bool:
-            return False
-        has_control = True
+    ea = value.get("enforce_admins")
+    if not isinstance(ea, dict):
+        return False
+    enabled = ea.get("enabled")
+    if type(enabled) is not bool:
+        return False
+    if "url" in ea and ea["url"] is not None and not isinstance(ea["url"], str):
+        return False
 
     for flag_key in (
         "required_signatures",
@@ -476,21 +479,16 @@ def _complete_branch_protection(value: Any) -> bool:
         if flag_key in value:
             flag_val = value.get(flag_key)
             if isinstance(flag_val, dict):
-                enabled = flag_val.get("enabled")
-                if type(enabled) is not bool:
+                en = flag_val.get("enabled")
+                if type(en) is not bool:
                     return False
             elif type(flag_val) is not bool:
                 return False
-            has_control = True
 
     if "restrictions" in value:
         res = value.get("restrictions")
         if res is not None and not isinstance(res, dict):
             return False
-        has_control = True
-
-    if not has_control:
-        return False
 
     return True
 
