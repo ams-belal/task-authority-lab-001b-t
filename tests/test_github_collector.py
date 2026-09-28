@@ -876,6 +876,78 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["branch_protection"], "UNKNOWN")
 
+    def test_valid_branch_protection_nested_restrictions_succeeds(self):
+        valid_bp = {
+            **VALID_BRANCH_PROTECTION,
+            "required_pull_request_reviews": {
+                **VALID_BRANCH_PROTECTION["required_pull_request_reviews"],
+                "dismissal_restrictions": {
+                    "users": [{"id": 1, "login": "user1"}],
+                    "teams": [{"id": 2, "slug": "team1"}],
+                    "apps": [{"id": 3, "slug": "app1"}],
+                    "url": "https://api.github.com/...",
+                },
+                "bypass_pull_request_allowances": {
+                    "users": [],
+                    "teams": [],
+                    "apps": [],
+                },
+            },
+            "restrictions": {
+                "users": [{"id": 4, "login": "user2"}],
+                "teams": [],
+                "apps": [],
+            },
+        }
+        bp_path = f"repos/{REPO}/branches/main/protection"
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            bp_path: valid_bp,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertTrue(result["known"])
+        self.assertEqual(result["branch_protection"], valid_bp)
+
+    def test_malformed_branch_protection_nested_restrictions_fail_closed(self):
+        base_pr = VALID_BRANCH_PROTECTION["required_pull_request_reviews"]
+        bad_restrictions_cases = [
+            # dismissal_restrictions not a dict
+            {**VALID_BRANCH_PROTECTION, "required_pull_request_reviews": {**base_pr, "dismissal_restrictions": "not-a-dict"}},
+            # bypass_pull_request_allowances missing users
+            {**VALID_BRANCH_PROTECTION, "required_pull_request_reviews": {**base_pr, "bypass_pull_request_allowances": {"teams": [], "apps": []}}},
+            # restrictions users not a list
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": "not-a-list", "teams": [], "apps": []}},
+            # user missing id
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [{"login": "user"}], "teams": [], "apps": []}},
+            # user missing login
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [{"id": 1}], "teams": [], "apps": []}},
+            # user id invalid
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [{"id": 0, "login": "user"}], "teams": [], "apps": []}},
+            # team missing slug
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [], "teams": [{"id": 1}], "apps": []}},
+            # app missing slug/name
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [], "teams": [], "apps": [{"id": 1}]}},
+            # unexpected key in restriction object
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [], "teams": [], "apps": [], "unexpected": True}},
+        ]
+        for bad_bp in bad_restrictions_cases:
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: bad_bp,
+            }
+            with self.subTest(bad_bp=bad_bp), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["branch_protection"], "UNKNOWN")
+
 
 if __name__ == "__main__":
     unittest.main()

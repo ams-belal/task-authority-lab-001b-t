@@ -381,6 +381,65 @@ def _complete_workflow_permissions(value: Any) -> bool:
     return True
 
 
+def _valid_restriction_object(obj: Any) -> bool:
+    if obj is None:
+        return True
+    if not isinstance(obj, dict):
+        return False
+    allowed_keys = {"users", "teams", "apps", "url", "users_url", "teams_url", "apps_url"}
+    if not set(obj.keys()).issubset(allowed_keys):
+        return False
+    required_keys = {"users", "teams", "apps"}
+    if not required_keys.issubset(obj.keys()):
+        return False
+
+    users = obj.get("users")
+    if not isinstance(users, list):
+        return False
+    for user in users:
+        if not isinstance(user, dict):
+            return False
+        uid = user.get("id")
+        if type(uid) is not int or uid <= 0:
+            return False
+        login = user.get("login")
+        if not isinstance(login, str) or not login.strip():
+            return False
+
+    teams = obj.get("teams")
+    if not isinstance(teams, list):
+        return False
+    for team in teams:
+        if not isinstance(team, dict):
+            return False
+        tid = team.get("id")
+        if type(tid) is not int or tid <= 0:
+            return False
+        slug = team.get("slug")
+        if not isinstance(slug, str) or not slug.strip():
+            return False
+
+    apps = obj.get("apps")
+    if not isinstance(apps, list):
+        return False
+    for app in apps:
+        if not isinstance(app, dict):
+            return False
+        aid = app.get("id")
+        if type(aid) is not int or aid <= 0:
+            return False
+        aslug = app.get("slug")
+        aname = app.get("name")
+        if not ((isinstance(aslug, str) and aslug.strip()) or (isinstance(aname, str) and aname.strip())):
+            return False
+
+    for url_key in ("url", "users_url", "teams_url", "apps_url"):
+        if url_key in obj and obj[url_key] is not None and not isinstance(obj[url_key], str):
+            return False
+
+    return True
+
+
 def _complete_branch_protection(value: Any) -> bool:
     if not isinstance(value, dict) or not value:
         return False
@@ -427,9 +486,11 @@ def _complete_branch_protection(value: Any) -> bool:
     for k in ("required_review_thread_resolution",):
         if k in pr and type(pr[k]) is not bool:
             return False
-    for k in ("dismissal_restrictions", "bypass_pull_request_allowances", "url"):
-        if k in pr and pr[k] is not None and not isinstance(pr[k], (dict, str, list)):
+    for k in ("dismissal_restrictions", "bypass_pull_request_allowances"):
+        if k in pr and not _valid_restriction_object(pr[k]):
             return False
+    if "url" in pr and pr["url"] is not None and not isinstance(pr["url"], str):
+        return False
 
     sc = value.get("required_status_checks")
     if not isinstance(sc, dict):
@@ -490,7 +551,7 @@ def _complete_branch_protection(value: Any) -> bool:
 
     if "restrictions" in value:
         res = value.get("restrictions")
-        if res is not None and not isinstance(res, dict):
+        if not _valid_restriction_object(res):
             return False
 
     return True
