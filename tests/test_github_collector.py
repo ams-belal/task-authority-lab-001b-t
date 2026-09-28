@@ -40,8 +40,24 @@ VALID_RULESET_42 = {
     "rules": [{"type": "required_linear_history"}]
 }
 
+VALID_BRANCH_PROTECTION = {
+    "required_pull_request_reviews": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews": False,
+        "require_code_owner_reviews": False,
+        "require_last_push_approval": False,
+    },
+    "required_status_checks": {
+        "strict": True,
+        "checks": [{"context": "ci"}],
+    },
+    "enforce_admins": {
+        "enabled": True,
+    },
+}
+
 BASE_RESPONSES = {
-    f"repos/{REPO}/branches/main/protection": {"required_pull_request_reviews": {"required_approving_review_count": 1}},
+    f"repos/{REPO}/branches/main/protection": VALID_BRANCH_PROTECTION,
     RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}]],
     RULESET_41_PATH: VALID_RULESET_41,
     RULESET_42_PATH: VALID_RULESET_42,
@@ -742,6 +758,234 @@ class GitHubCollectorTests(unittest.TestCase):
                 result = snapshot(REPO, "main")
                 self.assertFalse(result["known"])
                 self.assertEqual(result["workflow_permissions"], "UNKNOWN")
+
+    def test_valid_branch_protection_succeeds(self):
+        for valid_bp in (
+            VALID_BRANCH_PROTECTION,
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 2, "dismiss_stale_reviews": True, "require_code_owner_reviews": True, "require_last_push_approval": False},
+                "required_status_checks": {"strict": False, "contexts": ["build"]},
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False, "require_last_push_approval": True},
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci", "app_id": 123}]},
+                "enforce_admins": {"enabled": False, "url": "https://api.github.com/..."},
+                "required_linear_history": {"enabled": True},
+                "allow_force_pushes": False,
+            },
+        ):
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: valid_bp,
+            }
+            with self.subTest(valid_bp=valid_bp), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["branch_protection"], valid_bp)
+
+    def test_malformed_or_absent_branch_protection_fails_closed(self):
+        bad_bps = (
+            {},
+            None,
+            # Partial shapes demonstrated in defect description
+            {"enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1}},
+            {"required_status_checks": {"strict": True, "checks": [{"context": "ci"}]}},
+            # Missing required nested fields or subsections
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1}, # missing dismiss_stale_reviews, require_code_owner_reviews
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False}, # missing require_last_push_approval
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False, "require_last_push_approval": "true"}, # malformed type
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False, "require_last_push_approval": None}, # malformed type
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False, "require_last_push_approval": False},
+                "required_status_checks": {"checks": [{"context": "ci"}]}, # missing strict
+                "enforce_admins": {"enabled": True},
+            },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+                "enforce_admins": {}, # missing enabled
+            },
+            {"required_pull_request_reviews": {"required_approving_review_count": "1", "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": "yes", "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": "true", "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": "not-a-list"},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": ""}]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": "true"}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": True},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
+             "enforce_admins": {"enabled": True},
+             "unknown_control": True},
+            "not-a-dict",
+        )
+        for bad_bp in bad_bps:
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: bad_bp,
+            }
+            with self.subTest(bad_bp=bad_bp), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["branch_protection"], "UNKNOWN")
+
+    def test_valid_branch_protection_nested_restrictions_succeeds(self):
+        valid_bp = {
+            **VALID_BRANCH_PROTECTION,
+            "required_pull_request_reviews": {
+                **VALID_BRANCH_PROTECTION["required_pull_request_reviews"],
+                "dismissal_restrictions": {
+                    "users": [{"id": 1, "login": "user1"}],
+                    "teams": [{"id": 2, "slug": "team1"}],
+                    "apps": [{"id": 3, "slug": "app1"}],
+                    "url": "https://api.github.com/...",
+                },
+                "bypass_pull_request_allowances": {
+                    "users": [],
+                    "teams": [],
+                    "apps": [],
+                },
+            },
+            "restrictions": {
+                "users": [{"id": 4, "login": "user2"}],
+                "teams": [],
+                "apps": [],
+            },
+        }
+        bp_path = f"repos/{REPO}/branches/main/protection"
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            bp_path: valid_bp,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertTrue(result["known"])
+        self.assertEqual(result["branch_protection"], valid_bp)
+
+    def test_malformed_branch_protection_nested_restrictions_fail_closed(self):
+        base_pr = VALID_BRANCH_PROTECTION["required_pull_request_reviews"]
+        bad_restrictions_cases = [
+            # dismissal_restrictions not a dict
+            {**VALID_BRANCH_PROTECTION, "required_pull_request_reviews": {**base_pr, "dismissal_restrictions": "not-a-dict"}},
+            # bypass_pull_request_allowances missing users
+            {**VALID_BRANCH_PROTECTION, "required_pull_request_reviews": {**base_pr, "bypass_pull_request_allowances": {"teams": [], "apps": []}}},
+            # restrictions users not a list
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": "not-a-list", "teams": [], "apps": []}},
+            # user missing id
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [{"login": "user"}], "teams": [], "apps": []}},
+            # user missing login
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [{"id": 1}], "teams": [], "apps": []}},
+            # user id invalid
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [{"id": 0, "login": "user"}], "teams": [], "apps": []}},
+            # team missing slug
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [], "teams": [{"id": 1}], "apps": []}},
+            # app missing slug/name
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [], "teams": [], "apps": [{"id": 1}]}},
+            # unexpected key in restriction object
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [], "teams": [], "apps": [], "unexpected": True}},
+        ]
+        for bad_bp in bad_restrictions_cases:
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: bad_bp,
+            }
+            with self.subTest(bad_bp=bad_bp), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["branch_protection"], "UNKNOWN")
+
+    def test_present_null_nested_restrictions_and_app_without_slug_fail_closed(self):
+        base_pr = VALID_BRANCH_PROTECTION["required_pull_request_reviews"]
+        bad_cases = [
+            {**VALID_BRANCH_PROTECTION, "required_pull_request_reviews": {**base_pr, "dismissal_restrictions": None}},
+            {**VALID_BRANCH_PROTECTION, "required_pull_request_reviews": {**base_pr, "bypass_pull_request_allowances": None}},
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [], "teams": [], "apps": [{"id": 3, "name": "app1"}]}},
+        ]
+        for bad_bp in bad_cases:
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: bad_bp,
+            }
+            with self.subTest(bad_bp=bad_bp), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["branch_protection"], "UNKNOWN")
+
+    def test_absent_optional_nested_sections_and_top_level_restrictions_null_succeed(self):
+        valid_bp = {
+            **VALID_BRANCH_PROTECTION,
+            "restrictions": None,
+        }
+        bp_path = f"repos/{REPO}/branches/main/protection"
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            bp_path: valid_bp,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertTrue(result["known"])
+        self.assertEqual(result["branch_protection"], valid_bp)
 
 
 if __name__ == "__main__":

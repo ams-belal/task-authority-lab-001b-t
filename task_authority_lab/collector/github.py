@@ -381,6 +381,181 @@ def _complete_workflow_permissions(value: Any) -> bool:
     return True
 
 
+def _valid_restriction_object(obj: Any, *, allow_none: bool = False) -> bool:
+    if obj is None:
+        return allow_none
+    if not isinstance(obj, dict):
+        return False
+    allowed_keys = {"users", "teams", "apps", "url", "users_url", "teams_url", "apps_url"}
+    if not set(obj.keys()).issubset(allowed_keys):
+        return False
+    required_keys = {"users", "teams", "apps"}
+    if not required_keys.issubset(obj.keys()):
+        return False
+
+    users = obj.get("users")
+    if not isinstance(users, list):
+        return False
+    for user in users:
+        if not isinstance(user, dict):
+            return False
+        uid = user.get("id")
+        if type(uid) is not int or uid <= 0:
+            return False
+        login = user.get("login")
+        if not isinstance(login, str) or not login.strip():
+            return False
+
+    teams = obj.get("teams")
+    if not isinstance(teams, list):
+        return False
+    for team in teams:
+        if not isinstance(team, dict):
+            return False
+        tid = team.get("id")
+        if type(tid) is not int or tid <= 0:
+            return False
+        slug = team.get("slug")
+        if not isinstance(slug, str) or not slug.strip():
+            return False
+
+    apps = obj.get("apps")
+    if not isinstance(apps, list):
+        return False
+    for app in apps:
+        if not isinstance(app, dict):
+            return False
+        aid = app.get("id")
+        if type(aid) is not int or aid <= 0:
+            return False
+        aslug = app.get("slug")
+        if not isinstance(aslug, str) or not aslug.strip():
+            return False
+
+    for url_key in ("url", "users_url", "teams_url", "apps_url"):
+        if url_key in obj and obj[url_key] is not None and not isinstance(obj[url_key], str):
+            return False
+
+    return True
+
+
+def _complete_branch_protection(value: Any) -> bool:
+    if not isinstance(value, dict) or not value:
+        return False
+    allowed_keys = {
+        "url",
+        "required_status_checks",
+        "required_pull_request_reviews",
+        "enforce_admins",
+        "required_signatures",
+        "restrictions",
+        "required_linear_history",
+        "allow_force_pushes",
+        "allow_deletions",
+        "block_creations",
+        "required_conversation_resolution",
+        "lock_branch",
+        "allow_fork_syncing",
+        "name",
+        "protected",
+        "protection_url",
+    }
+    if not set(value.keys()).issubset(allowed_keys):
+        return False
+
+    required_core_keys = {"required_pull_request_reviews", "required_status_checks", "enforce_admins"}
+    if not required_core_keys.issubset(value.keys()):
+        return False
+
+    pr = value.get("required_pull_request_reviews")
+    if not isinstance(pr, dict):
+        return False
+    approvals = pr.get("required_approving_review_count")
+    if type(approvals) is not int or approvals < 0:
+        return False
+    dismiss_stale = pr.get("dismiss_stale_reviews")
+    if type(dismiss_stale) is not bool:
+        return False
+    code_owner = pr.get("require_code_owner_reviews")
+    if type(code_owner) is not bool:
+        return False
+    last_push = pr.get("require_last_push_approval")
+    if type(last_push) is not bool:
+        return False
+    for k in ("required_review_thread_resolution",):
+        if k in pr and type(pr[k]) is not bool:
+            return False
+    for k in ("dismissal_restrictions", "bypass_pull_request_allowances"):
+        if k in pr and not _valid_restriction_object(pr[k], allow_none=False):
+            return False
+    if "url" in pr and pr["url"] is not None and not isinstance(pr["url"], str):
+        return False
+
+    sc = value.get("required_status_checks")
+    if not isinstance(sc, dict):
+        return False
+    strict = sc.get("strict")
+    if type(strict) is not bool:
+        return False
+    checks = sc.get("checks")
+    if checks is not None:
+        if not isinstance(checks, list):
+            return False
+        for check in checks:
+            if not isinstance(check, dict):
+                return False
+            context = check.get("context")
+            if not isinstance(context, str) or not context.strip():
+                return False
+            app_id = check.get("app_id")
+            if app_id is not None and type(app_id) is not int:
+                return False
+    contexts = sc.get("contexts")
+    if contexts is not None:
+        if not isinstance(contexts, list):
+            return False
+        for ctx in contexts:
+            if not isinstance(ctx, str) or not ctx.strip():
+                return False
+    if checks is None and contexts is None:
+        return False
+
+    ea = value.get("enforce_admins")
+    if not isinstance(ea, dict):
+        return False
+    enabled = ea.get("enabled")
+    if type(enabled) is not bool:
+        return False
+    if "url" in ea and ea["url"] is not None and not isinstance(ea["url"], str):
+        return False
+
+    for flag_key in (
+        "required_signatures",
+        "required_linear_history",
+        "allow_force_pushes",
+        "allow_deletions",
+        "block_creations",
+        "required_conversation_resolution",
+        "lock_branch",
+        "allow_fork_syncing",
+    ):
+        if flag_key in value:
+            flag_val = value.get(flag_key)
+            if isinstance(flag_val, dict):
+                en = flag_val.get("enabled")
+                if type(en) is not bool:
+                    return False
+            elif type(flag_val) is not bool:
+                return False
+
+    if "restrictions" in value:
+        res = value.get("restrictions")
+        if not _valid_restriction_object(res, allow_none=True):
+            return False
+
+    return True
+
+
 def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
     if not repo or "/" not in repo or not base_branch:
         raise ValueError("repo must be owner/name and base branch must be given")
@@ -406,12 +581,13 @@ def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
     environments_known = _complete_environments(environments)
     repo_meta_known = _complete_repository_metadata(repo_meta)
     workflow_permissions_known = _complete_workflow_permissions(workflow_permissions)
+    branch_known = _complete_branch_protection(branch)
     output = {
         "repository": repo,
         "base_branch": base_branch,
         "snapshot_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "source": "github_api_via_gh",
-        "branch_protection": branch if branch is not None else "UNKNOWN",
+        "branch_protection": branch if branch_known else "UNKNOWN",
         "rulesets": rulesets if rulesets is not None else "UNKNOWN",
         "workflow_permissions": workflow_permissions if workflow_permissions_known else "UNKNOWN",
         "environments": environments if environments_known else "UNKNOWN",
