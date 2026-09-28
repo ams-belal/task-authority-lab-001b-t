@@ -46,7 +46,7 @@ BASE_RESPONSES = {
     RULESET_41_PATH: VALID_RULESET_41,
     RULESET_42_PATH: VALID_RULESET_42,
     f"repos/{REPO}/actions/permissions/workflow": {"can_approve_pull_request_reviews": False},
-    f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"push": True}},
+    f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
 }
 
 
@@ -439,7 +439,7 @@ class GitHubCollectorTests(unittest.TestCase):
                 ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
                 RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Organization", "source": "example/org", "enforcement": "active"}]],
                 RULESET_41_PATH: bad_detail,
-                f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"push": True}},
+                f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
             }
             with self.subTest(detail=bad_detail), patch(
                 "task_authority_lab.collector.github._api",
@@ -454,7 +454,7 @@ class GitHubCollectorTests(unittest.TestCase):
             ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
             RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Organization", "source": "example/org", "enforcement": "active"}]],
             RULESET_41_PATH: valid_combined,
-            f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"push": True}},
+            f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
         }
         with patch("task_authority_lab.collector.github._api",
                    side_effect=lambda route, **kwargs: responses_valid.get(route)):
@@ -611,7 +611,7 @@ class GitHubCollectorTests(unittest.TestCase):
                 ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
                 RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Enterprise", "source": "example/enterprise", "enforcement": "active"}]],
                 RULESET_41_PATH: bad_detail,
-                f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"push": True}},
+                f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
             }
             with self.subTest(detail=bad_detail), patch(
                 "task_authority_lab.collector.github._api",
@@ -627,7 +627,7 @@ class GitHubCollectorTests(unittest.TestCase):
                 ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
                 RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Enterprise", "source": "example/enterprise", "enforcement": "active"}]],
                 RULESET_41_PATH: good_detail,
-                f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"push": True}},
+                f"repos/{REPO}": {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
             }
             with self.subTest(detail=good_detail), patch(
                 "task_authority_lab.collector.github._api",
@@ -636,6 +636,62 @@ class GitHubCollectorTests(unittest.TestCase):
                 result = snapshot(REPO, "main")
                 self.assertTrue(result["known"])
                 self.assertEqual(result["rulesets"], [good_detail])
+
+    def test_valid_repository_metadata_succeeds(self):
+        for valid_meta in (
+            {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
+            {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False, "maintain": True, "triage": False}},
+        ):
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                f"repos/{REPO}": valid_meta,
+            }
+            with self.subTest(valid_meta=valid_meta), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["repository_metadata"], valid_meta)
+
+    def test_malformed_or_absent_repository_metadata_fails_closed(self):
+        bad_metas = (
+            None,
+            {},
+            {"default_branch": None, "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
+            {"default_branch": "", "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
+            {"default_branch": "   ", "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
+            {"default_branch": 123, "private": False, "permissions": {"pull": True, "push": True, "admin": False}},
+            {"default_branch": "main", "private": "false", "permissions": {"pull": True, "push": True, "admin": False}},
+            {"default_branch": "main", "private": None, "permissions": {"pull": True, "push": True, "admin": False}},
+            {"default_branch": "main", "private": 0, "permissions": {"pull": True, "push": True, "admin": False}},
+            {"default_branch": "main", "private": False, "permissions": "not-a-dict"},
+            {"default_branch": "main", "private": False, "permissions": {}},
+            {"default_branch": "main", "private": False, "permissions": {"push": True, "admin": False}},
+            {"default_branch": "main", "private": False, "permissions": {"pull": True, "admin": False}},
+            {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True}},
+            {"default_branch": "main", "private": False, "permissions": {"pull": "true", "push": True, "admin": False}},
+            {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False, "maintain": "true"}},
+            {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False, "unknown": True}},
+            {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": None}},
+            {"default_branch": "main", "private": False},
+            {"default_branch": "main", "permissions": {"pull": True, "push": True, "admin": False}},
+            {"private": False, "permissions": {"pull": True, "push": True, "admin": False}},
+        )
+        for bad_meta in bad_metas:
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                f"repos/{REPO}": bad_meta,
+            }
+            with self.subTest(bad_meta=bad_meta), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["repository_metadata"], "UNKNOWN")
 
 
 if __name__ == "__main__":

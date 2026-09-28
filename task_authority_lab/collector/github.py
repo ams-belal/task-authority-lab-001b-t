@@ -340,6 +340,29 @@ def _complete_environments(value: Any) -> bool:
     return True
 
 
+def _complete_repository_metadata(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    default_branch = value.get("default_branch")
+    if not isinstance(default_branch, str) or not default_branch.strip():
+        return False
+    private = value.get("private")
+    if type(private) is not bool:
+        return False
+    permissions = value.get("permissions")
+    if not isinstance(permissions, dict):
+        return False
+    core_permissions = {"pull", "push", "admin"}
+    if not core_permissions.issubset(permissions.keys()):
+        return False
+    allowed_permissions = {"pull", "push", "admin", "maintain", "triage"}
+    if not set(permissions.keys()).issubset(allowed_permissions):
+        return False
+    if any(type(v) is not bool for v in permissions.values()):
+        return False
+    return True
+
+
 def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
     if not repo or "/" not in repo or not base_branch:
         raise ValueError("repo must be owner/name and base branch must be given")
@@ -363,6 +386,7 @@ def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
     environments = _api(f"repos/{repo}/environments?per_page=100&page=1")
     repo_meta = _api(f"repos/{repo}")
     environments_known = _complete_environments(environments)
+    repo_meta_known = _complete_repository_metadata(repo_meta)
     output = {
         "repository": repo,
         "base_branch": base_branch,
@@ -376,7 +400,7 @@ def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
             "default_branch": repo_meta.get("default_branch"),
             "private": repo_meta.get("private"),
             "permissions": repo_meta.get("permissions"),
-        } if isinstance(repo_meta, dict) else "UNKNOWN",
+        } if repo_meta_known else "UNKNOWN",
     }
     output["known"] = all(output[key] != "UNKNOWN" for key in ("branch_protection", "rulesets", "workflow_permissions", "environments", "repository_metadata"))
     output["integrity_hash"] = sha256_json(output)
