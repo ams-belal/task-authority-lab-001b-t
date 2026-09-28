@@ -743,6 +743,62 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["workflow_permissions"], "UNKNOWN")
 
+    def test_valid_branch_protection_succeeds(self):
+        for valid_bp in (
+            {"required_pull_request_reviews": {"required_approving_review_count": 1}},
+            {"required_status_checks": {"strict": True, "checks": [{"context": "ci"}]}},
+            {"enforce_admins": {"enabled": True}},
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 2, "dismiss_stale_reviews": True},
+                "required_status_checks": {"strict": False, "contexts": ["build"]},
+                "enforce_admins": {"enabled": True},
+            },
+        ):
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: valid_bp,
+            }
+            with self.subTest(valid_bp=valid_bp), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["branch_protection"], valid_bp)
+
+    def test_malformed_or_absent_branch_protection_fails_closed(self):
+        bad_bps = (
+            {},
+            None,
+            {"required_pull_request_reviews": {"required_approving_review_count": "1"}},
+            {"required_pull_request_reviews": {}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": "yes"}},
+            {"required_status_checks": {}},
+            {"required_status_checks": {"strict": "true"}},
+            {"required_status_checks": {"strict": True, "checks": "not-a-list"}},
+            {"required_status_checks": {"strict": True, "checks": [{"context": ""}]}},
+            {"enforce_admins": {"enabled": "true"}},
+            {"enforce_admins": "true"},
+            {"unknown_control": True},
+            "not-a-dict",
+        )
+        for bad_bp in bad_bps:
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: bad_bp,
+            }
+            with self.subTest(bad_bp=bad_bp), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["branch_protection"], "UNKNOWN")
+
 
 if __name__ == "__main__":
     unittest.main()
