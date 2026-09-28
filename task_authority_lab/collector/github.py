@@ -363,6 +363,24 @@ def _complete_repository_metadata(value: Any) -> bool:
     return True
 
 
+def _complete_workflow_permissions(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    required_keys = {"default_workflow_permissions", "can_approve_pull_request_reviews"}
+    if not required_keys.issubset(value.keys()):
+        return False
+    allowed_keys = {"default_workflow_permissions", "can_approve_pull_request_reviews"}
+    if not set(value.keys()).issubset(allowed_keys):
+        return False
+    default_perms = value.get("default_workflow_permissions")
+    if not isinstance(default_perms, str) or default_perms not in {"read", "write"}:
+        return False
+    can_approve = value.get("can_approve_pull_request_reviews")
+    if type(can_approve) is not bool:
+        return False
+    return True
+
+
 def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
     if not repo or "/" not in repo or not base_branch:
         raise ValueError("repo must be owner/name and base branch must be given")
@@ -387,6 +405,7 @@ def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
     repo_meta = _api(f"repos/{repo}")
     environments_known = _complete_environments(environments)
     repo_meta_known = _complete_repository_metadata(repo_meta)
+    workflow_permissions_known = _complete_workflow_permissions(workflow_permissions)
     output = {
         "repository": repo,
         "base_branch": base_branch,
@@ -394,7 +413,7 @@ def snapshot(repo: str, base_branch: str) -> dict[str, Any]:
         "source": "github_api_via_gh",
         "branch_protection": branch if branch is not None else "UNKNOWN",
         "rulesets": rulesets if rulesets is not None else "UNKNOWN",
-        "workflow_permissions": workflow_permissions if workflow_permissions is not None else "UNKNOWN",
+        "workflow_permissions": workflow_permissions if workflow_permissions_known else "UNKNOWN",
         "environments": environments if environments_known else "UNKNOWN",
         "repository_metadata": {
             "default_branch": repo_meta.get("default_branch"),
