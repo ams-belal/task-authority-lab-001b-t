@@ -948,6 +948,45 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["branch_protection"], "UNKNOWN")
 
+    def test_present_null_nested_restrictions_and_app_without_slug_fail_closed(self):
+        base_pr = VALID_BRANCH_PROTECTION["required_pull_request_reviews"]
+        bad_cases = [
+            {**VALID_BRANCH_PROTECTION, "required_pull_request_reviews": {**base_pr, "dismissal_restrictions": None}},
+            {**VALID_BRANCH_PROTECTION, "required_pull_request_reviews": {**base_pr, "bypass_pull_request_allowances": None}},
+            {**VALID_BRANCH_PROTECTION, "restrictions": {"users": [], "teams": [], "apps": [{"id": 3, "name": "app1"}]}},
+        ]
+        for bad_bp in bad_cases:
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: bad_bp,
+            }
+            with self.subTest(bad_bp=bad_bp), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["branch_protection"], "UNKNOWN")
+
+    def test_absent_optional_nested_sections_and_top_level_restrictions_null_succeed(self):
+        valid_bp = {
+            **VALID_BRANCH_PROTECTION,
+            "restrictions": None,
+        }
+        bp_path = f"repos/{REPO}/branches/main/protection"
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            bp_path: valid_bp,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertTrue(result["known"])
+        self.assertEqual(result["branch_protection"], valid_bp)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -381,9 +381,9 @@ def _complete_workflow_permissions(value: Any) -> bool:
     return True
 
 
-def _valid_restriction_object(obj: Any) -> bool:
+def _valid_restriction_object(obj: Any, *, allow_none: bool = False) -> bool:
     if obj is None:
-        return True
+        return allow_none
     if not isinstance(obj, dict):
         return False
     allowed_keys = {"users", "teams", "apps", "url", "users_url", "teams_url", "apps_url"}
@@ -429,8 +429,7 @@ def _valid_restriction_object(obj: Any) -> bool:
         if type(aid) is not int or aid <= 0:
             return False
         aslug = app.get("slug")
-        aname = app.get("name")
-        if not ((isinstance(aslug, str) and aslug.strip()) or (isinstance(aname, str) and aname.strip())):
+        if not isinstance(aslug, str) or not aslug.strip():
             return False
 
     for url_key in ("url", "users_url", "teams_url", "apps_url"):
@@ -487,7 +486,7 @@ def _complete_branch_protection(value: Any) -> bool:
         if k in pr and type(pr[k]) is not bool:
             return False
     for k in ("dismissal_restrictions", "bypass_pull_request_allowances"):
-        if k in pr and not _valid_restriction_object(pr[k]):
+        if k in pr and not _valid_restriction_object(pr[k], allow_none=False):
             return False
     if "url" in pr and pr["url"] is not None and not isinstance(pr["url"], str):
         return False
@@ -551,7 +550,7 @@ def _complete_branch_protection(value: Any) -> bool:
 
     if "restrictions" in value:
         res = value.get("restrictions")
-        if not _valid_restriction_object(res):
+        if not _valid_restriction_object(res, allow_none=True):
             return False
 
     return True
