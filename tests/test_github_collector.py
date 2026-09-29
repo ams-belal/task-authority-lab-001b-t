@@ -186,8 +186,18 @@ class GitHubCollectorTests(unittest.TestCase):
         for bad_bypass in (
             "not-a-list",
             [{"actor_type": ""}],
+            [{"actor_type": "UnrecognizedActor", "bypass_mode": "always", "actor_id": 1}],
             [{"actor_type": "Integration", "bypass_mode": ""}],
+            [{"actor_type": "Integration", "bypass_mode": "unrestricted", "actor_id": 1}],
+            [{"actor_type": "DeployKey", "bypass_mode": "pull_request"}],
+            [{"actor_type": "Integration", "bypass_mode": "always"}],
             [{"actor_type": "Integration", "bypass_mode": "always", "actor_id": "not-int"}],
+            [{"actor_type": "Integration", "bypass_mode": "always", "actor_id": None}],
+            [{"actor_type": "Integration", "bypass_mode": "always", "actor_id": True}],
+            [{"actor_type": "Integration", "bypass_mode": "always", "actor_id": -1}],
+            [{"actor_type": "Integration", "bypass_mode": "always", "actor_id": 0}],
+            [{"actor_type": "RepositoryRole", "bypass_mode": "always", "actor_id": "1"}],
+            [{"actor_type": "DeployKey", "bypass_mode": "always", "actor_id": 1}],
         ):
             detail = {**VALID_RULESET_41, "bypass_actors": bad_bypass}
             responses = {
@@ -202,6 +212,47 @@ class GitHubCollectorTests(unittest.TestCase):
                 result = snapshot(REPO, "main")
                 self.assertFalse(result["known"])
                 self.assertEqual(result["rulesets"], "UNKNOWN")
+
+        # Test pull_request mode on non-branch target
+        bad_pr_target = {**VALID_RULESET_41, "target": "repository", "bypass_actors": [{"actor_type": "Integration", "bypass_mode": "pull_request", "actor_id": 1}]}
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESET_41_PATH: bad_pr_target,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_valid_bypass_actor_combinations_succeed(self):
+        for valid_bypass in (
+            [],
+            [{"actor_id": 1, "actor_type": "Integration", "bypass_mode": "always"}],
+            [{"actor_id": 1, "actor_type": "Integration", "bypass_mode": "pull_request"}],
+            [{"actor_id": 1, "actor_type": "Integration", "bypass_mode": "exempt"}],
+            [{"actor_type": "OrganizationAdmin", "bypass_mode": "always"}],
+            [{"actor_type": "OrganizationAdmin", "actor_id": 1, "bypass_mode": "always"}],
+            [{"actor_id": 2, "actor_type": "RepositoryRole", "bypass_mode": "always"}],
+            [{"actor_id": 3, "actor_type": "Team", "bypass_mode": "always"}],
+            [{"actor_id": 4, "actor_type": "User", "bypass_mode": "always"}],
+            [{"actor_id": None, "actor_type": "DeployKey", "bypass_mode": "always"}],
+            [{"actor_type": "DeployKey", "bypass_mode": "always"}],
+        ):
+            detail = {**VALID_RULESET_41, "bypass_actors": valid_bypass}
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESET_41_PATH: detail,
+            }
+            with self.subTest(valid_bypass=valid_bypass), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["rulesets"], [detail])
 
     def test_mismatched_ruleset_detail_fields_fail_closed(self):
         for mismatch in (
