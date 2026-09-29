@@ -41,11 +41,12 @@ def _complete_rulesets_summary(pages: Any) -> list[dict[str, Any]] | None:
             if not isinstance(entry, dict):
                 return None
             identifier = entry.get("id")
+            enforcement = entry.get("enforcement")
             if (type(identifier) is not int or identifier <= 0 or identifier in identifiers
                     or not isinstance(entry.get("name"), str) or not entry["name"].strip()
                     or not isinstance(entry.get("source_type"), str) or not entry["source_type"]
                     or not isinstance(entry.get("source"), str) or not entry["source"]
-                    or entry.get("enforcement") not in {"active", "evaluate", "disabled"}):
+                    or not isinstance(enforcement, str) or enforcement not in {"active", "evaluate", "disabled"}):
                 return None
             identifiers.add(identifier)
             rulesets.append(entry)
@@ -107,7 +108,7 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
     if not isinstance(source, str) or not source.strip() or source != summary.get("source"):
         return False
     enforcement = detail.get("enforcement")
-    if enforcement not in {"active", "evaluate", "disabled"} or enforcement != summary.get("enforcement"):
+    if not isinstance(enforcement, str) or enforcement not in {"active", "evaluate", "disabled"} or enforcement != summary.get("enforcement"):
         return False
     if "bypass_actors" not in detail:
         return False
