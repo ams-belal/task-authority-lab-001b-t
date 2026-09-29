@@ -118,7 +118,7 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
         if not isinstance(actor, dict):
             return False
         actor_type = actor.get("actor_type")
-        if not isinstance(actor_type, str) or actor_type not in {"Integration", "OrganizationAdmin", "RepositoryRole", "Team", "DeployKey", "User"}:
+        if not isinstance(actor_type, str) or actor_type not in {"Integration", "OrganizationAdmin", "RepositoryRole", "Team", "DeployKey", "User", "EnterpriseOwner", "EnterpriseRole"}:
             return False
         bypass_mode = actor.get("bypass_mode")
         if not isinstance(bypass_mode, str) or bypass_mode not in {"always", "pull_request", "exempt"}:
@@ -127,13 +127,13 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
             if target != "branch" or actor_type == "DeployKey":
                 return False
         actor_id = actor.get("actor_id")
-        if actor_type in {"Integration", "RepositoryRole", "Team", "User"}:
+        if actor_type in {"Integration", "RepositoryRole", "Team", "User", "EnterpriseRole"}:
             if type(actor_id) is not int or actor_id <= 0:
                 return False
         elif actor_type == "DeployKey":
             if actor_id is not None:
                 return False
-        elif actor_type == "OrganizationAdmin":
+        elif actor_type in {"OrganizationAdmin", "EnterpriseOwner"}:
             if actor_id is not None and type(actor_id) is not int:
                 return False
     conditions = detail.get("conditions")
