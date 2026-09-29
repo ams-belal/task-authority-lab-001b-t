@@ -9,9 +9,9 @@ from typing import Any
 from ..canonical import sha256_json
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, strip: bool = True) -> str:
     result = subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
-    return result.stdout.strip()
+    return result.stdout.strip() if strip else result.stdout
 
 
 def snapshot(repo: str | Path, base_ref: str) -> dict[str, Any]:
@@ -27,7 +27,7 @@ def snapshot(repo: str | Path, base_ref: str) -> dict[str, Any]:
     branch = _git(root, "branch", "--show-current")
     commit = _git(root, "rev-parse", "HEAD")
     base_commit = _git(root, "rev-parse", base_ref)
-    paths_output = _git(root, "diff", "--name-only", "-z", "--no-renames", f"{base_commit}...{commit}")
+    paths_output = _git(root, "diff", "--name-only", "-z", "--no-renames", f"{base_commit}...{commit}", strip=False)
     paths = [p for p in paths_output.split("\x00") if p]
     diff_stat = _git(root, "diff", "--stat", f"{base_commit}...{commit}")
     final_branch = _git(root, "branch", "--show-current")
