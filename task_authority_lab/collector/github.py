@@ -531,6 +531,11 @@ def _complete_branch_protection(value: Any) -> bool:
                 return False
     if checks is None and contexts is None:
         return False
+    if checks is not None and contexts is not None:
+        check_contexts = {check.get("context") for check in checks}
+        context_set = set(contexts)
+        if check_contexts != context_set:
+            return False
 
     ea = value.get("enforce_admins")
     if not isinstance(ea, dict):

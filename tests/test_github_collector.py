@@ -1045,6 +1045,11 @@ class GitHubCollectorTests(unittest.TestCase):
                 "required_linear_history": {"enabled": True},
                 "allow_force_pushes": False,
             },
+            {
+                "required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False, "require_last_push_approval": False},
+                "required_status_checks": {"strict": True, "checks": [{"context": "ci"}], "contexts": ["ci"]},
+                "enforce_admins": {"enabled": True},
+            },
         ):
             bp_path = f"repos/{REPO}/branches/main/protection"
             responses = {
@@ -1126,6 +1131,12 @@ class GitHubCollectorTests(unittest.TestCase):
             {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
              "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
              "enforce_admins": True},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}], "contexts": ["other"]},
+             "enforce_admins": {"enabled": True}},
+            {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
+             "required_status_checks": {"strict": True, "checks": [{"context": "ci"}], "contexts": ["ci", "other"]},
+             "enforce_admins": {"enabled": True}},
             {"required_pull_request_reviews": {"required_approving_review_count": 1, "dismiss_stale_reviews": False, "require_code_owner_reviews": False},
              "required_status_checks": {"strict": True, "checks": [{"context": "ci"}]},
              "enforce_admins": {"enabled": True},
