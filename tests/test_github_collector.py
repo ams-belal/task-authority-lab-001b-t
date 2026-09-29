@@ -198,16 +198,6 @@ class GitHubCollectorTests(unittest.TestCase):
             [{"actor_type": "Integration", "bypass_mode": "always", "actor_id": 0}],
             [{"actor_type": "RepositoryRole", "bypass_mode": "always", "actor_id": "1"}],
             [{"actor_type": "DeployKey", "bypass_mode": "always", "actor_id": 1}],
-            [{"actor_type": "EnterpriseRole", "bypass_mode": "always"}],
-            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": "5"}],
-            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": None}],
-            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": True}],
-            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": 0}],
-            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": -5}],
-            [{"actor_type": "EnterpriseRole", "actor_id": 5, "bypass_mode": "unsupported"}],
-            [{"actor_type": "EnterpriseOwner", "bypass_mode": "always", "actor_id": "1"}],
-            [{"actor_type": "EnterpriseOwner", "bypass_mode": "always", "actor_id": True}],
-            [{"actor_type": "EnterpriseOwner", "bypass_mode": "invalid"}],
         ):
             detail = {**VALID_RULESET_41, "bypass_actors": bad_bypass}
             responses = {
@@ -223,16 +213,95 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["rulesets"], "UNKNOWN")
 
-        # Test pull_request mode on non-branch target or enterprise actor with bad mode
+        # Test pull_request mode on non-branch target with non-enterprise actors
         for bad_pr_bypass in (
             {"target": "repository", "bypass_actors": [{"actor_type": "Integration", "bypass_mode": "pull_request", "actor_id": 1}]},
-            {"target": "repository", "bypass_actors": [{"actor_type": "EnterpriseOwner", "bypass_mode": "pull_request"}]},
-            {"target": "repository", "bypass_actors": [{"actor_type": "EnterpriseRole", "actor_id": 5, "bypass_mode": "pull_request"}]},
         ):
             bad_pr_target = {**VALID_RULESET_41, **bad_pr_bypass}
             responses = {
                 **BASE_RESPONSES,
                 ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESET_41_PATH: bad_pr_target,
+            }
+            with self.subTest(bad_pr_target=bad_pr_target), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_enterprise_malformed_bypass_actors_shape_fails_closed(self):
+        base_ent_detail = {
+            "id": 41,
+            "name": "one",
+            "target": "branch",
+            "source_type": "Enterprise",
+            "source": "example/enterprise",
+            "enforcement": "active",
+            "bypass_actors": [{"actor_type": "EnterpriseOwner", "bypass_mode": "always"}],
+            "conditions": {
+                "ref_name": {"include": ["refs/heads/main"], "exclude": []},
+                "organization_name": {"include": ["org"], "exclude": []},
+                "repository_name": {"include": ["*"], "exclude": []},
+            },
+            "rules": [{"type": "pull_request", "parameters": {
+                "required_approving_review_count": 1,
+                "require_last_push_approval": False,
+                "dismiss_stale_reviews_on_push": True,
+                "require_code_owner_review": True,
+                "required_review_thread_resolution": True,
+            }}],
+        }
+        valid_responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Enterprise", "source": "example/enterprise", "enforcement": "active"}]],
+            RULESET_41_PATH: base_ent_detail,
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: valid_responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertTrue(result["known"])
+        self.assertEqual(result["rulesets"], [base_ent_detail])
+
+        for bad_ent_bypass in (
+            [{"actor_type": "EnterpriseRole", "bypass_mode": "always"}],
+            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": "5"}],
+            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": None}],
+            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": True}],
+            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": 0}],
+            [{"actor_type": "EnterpriseRole", "bypass_mode": "always", "actor_id": -5}],
+            [{"actor_type": "EnterpriseRole", "actor_id": 5, "bypass_mode": "unsupported"}],
+            [{"actor_type": "EnterpriseOwner", "bypass_mode": "always", "actor_id": "1"}],
+            [{"actor_type": "EnterpriseOwner", "bypass_mode": "always", "actor_id": True}],
+            [{"actor_type": "EnterpriseOwner", "bypass_mode": "invalid"}],
+        ):
+            detail = {**base_ent_detail, "bypass_actors": bad_ent_bypass}
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Enterprise", "source": "example/enterprise", "enforcement": "active"}]],
+                RULESET_41_PATH: detail,
+            }
+            with self.subTest(bad_ent_bypass=bad_ent_bypass), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
+        for bad_pr_bypass in (
+            {"target": "repository", "bypass_actors": [{"actor_type": "EnterpriseOwner", "bypass_mode": "pull_request"}]},
+            {"target": "repository", "bypass_actors": [{"actor_type": "EnterpriseRole", "actor_id": 5, "bypass_mode": "pull_request"}]},
+            {"target": "tag", "bypass_actors": [{"actor_type": "EnterpriseRole", "actor_id": 5, "bypass_mode": "pull_request"}]},
+        ):
+            bad_pr_target = {**base_ent_detail, **bad_pr_bypass}
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Enterprise", "source": "example/enterprise", "enforcement": "active"}]],
                 RULESET_41_PATH: bad_pr_target,
             }
             with self.subTest(bad_pr_target=bad_pr_target), patch(
