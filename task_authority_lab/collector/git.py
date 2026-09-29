@@ -27,7 +27,8 @@ def snapshot(repo: str | Path, base_ref: str) -> dict[str, Any]:
     branch = _git(root, "branch", "--show-current")
     commit = _git(root, "rev-parse", "HEAD")
     base_commit = _git(root, "rev-parse", base_ref)
-    paths = _git(root, "diff", "--name-only", "--no-renames", f"{base_commit}...{commit}").splitlines()
+    paths_output = _git(root, "diff", "--name-only", "-z", "--no-renames", f"{base_commit}...{commit}")
+    paths = [p for p in paths_output.split("\x00") if p]
     diff_stat = _git(root, "diff", "--stat", f"{base_commit}...{commit}")
     final_branch = _git(root, "branch", "--show-current")
     final_commit = _git(root, "rev-parse", "HEAD")

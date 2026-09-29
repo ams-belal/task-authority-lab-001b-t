@@ -97,6 +97,29 @@ class GitCollectorTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "changed during collection"):
                     snapshot(repo, "main")
 
+    def test_snapshot_captures_paths_with_tabs_and_newlines_losslessly(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            git(repo, "init", "-b", "main")
+            git(repo, "config", "user.name", "Lab Test")
+            git(repo, "config", "user.email", "lab@example.invalid")
+            (repo / "ordinary.py").write_text("ordinary\n", encoding="utf-8")
+            git(repo, "add", "ordinary.py")
+            git(repo, "commit", "-m", "baseline")
+            base = git(repo, "rev-parse", "HEAD")
+
+            git(repo, "switch", "-c", "task/paths")
+            tab_filename = "review\tpolicy.txt"
+            newline_filename = "doc\nnotes.txt"
+            (repo / tab_filename).write_text("tab content\n", encoding="utf-8")
+            (repo / newline_filename).write_text("newline content\n", encoding="utf-8")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "add unusual paths")
+
+            clean = snapshot(repo, base)
+            self.assertEqual(clean["changed_paths"], sorted([tab_filename, newline_filename]))
+            self.assertTrue(clean["working_tree_clean"])
+
 
 if __name__ == "__main__":
     unittest.main()
