@@ -54,8 +54,8 @@ class GitCollectorTests(unittest.TestCase):
             base = prepared_repo(repo)
             original = git_collector._git
 
-            def mutate_after_diff(root, *args):
-                value = original(root, *args)
+            def mutate_after_diff(root, *args, **kwargs):
+                value = original(root, *args, **kwargs)
                 if args[:2] == ("diff", "--name-only"):
                     (repo / "late.py").write_text("late = True\n", encoding="utf-8")
                 return value
@@ -70,8 +70,8 @@ class GitCollectorTests(unittest.TestCase):
             base = prepared_repo(repo)
             original = git_collector._git
 
-            def commit_after_diff(root, *args):
-                value = original(root, *args)
+            def commit_after_diff(root, *args, **kwargs):
+                value = original(root, *args, **kwargs)
                 if args[:2] == ("diff", "--stat"):
                     (repo / "source.py").write_text("value = 3\n", encoding="utf-8")
                     git(repo, "commit", "-am", "concurrent change")
@@ -87,8 +87,8 @@ class GitCollectorTests(unittest.TestCase):
             prepared_repo(repo)
             original = git_collector._git
 
-            def move_base_after_diff(root, *args):
-                value = original(root, *args)
+            def move_base_after_diff(root, *args, **kwargs):
+                value = original(root, *args, **kwargs)
                 if args[:2] == ("diff", "--stat"):
                     git(repo, "update-ref", "refs/heads/main", git(repo, "rev-parse", "HEAD"))
                 return value
@@ -96,6 +96,57 @@ class GitCollectorTests(unittest.TestCase):
             with patch.object(git_collector, "_git", side_effect=move_base_after_diff):
                 with self.assertRaisesRegex(ValueError, "changed during collection"):
                     snapshot(repo, "main")
+
+    def test_snapshot_captures_paths_with_tabs_and_newlines_losslessly(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            git(repo, "init", "-b", "main")
+            git(repo, "config", "user.name", "Lab Test")
+            git(repo, "config", "user.email", "lab@example.invalid")
+            (repo / "ordinary.py").write_text("ordinary\n", encoding="utf-8")
+            git(repo, "add", "ordinary.py")
+            git(repo, "commit", "-m", "baseline")
+            base = git(repo, "rev-parse", "HEAD")
+
+            git(repo, "switch", "-c", "task/paths")
+            tab_filename = "review\tpolicy.txt"
+            newline_filename = "doc\nnotes.txt"
+            (repo / tab_filename).write_text("tab content\n", encoding="utf-8")
+            (repo / newline_filename).write_text("newline content\n", encoding="utf-8")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "add unusual paths")
+
+            clean = snapshot(repo, base)
+            self.assertEqual(clean["changed_paths"], sorted([tab_filename, newline_filename]))
+            self.assertTrue(clean["working_tree_clean"])
+
+    def test_snapshot_captures_paths_with_leading_whitespace_losslessly(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            git(repo, "init", "-b", "main")
+            git(repo, "config", "user.name", "Lab Test")
+            git(repo, "config", "user.email", "lab@example.invalid")
+            (repo / "ordinary.py").write_text("ordinary\n", encoding="utf-8")
+            git(repo, "add", "ordinary.py")
+            git(repo, "commit", "-m", "baseline")
+            base = git(repo, "rev-parse", "HEAD")
+
+            git(repo, "switch", "-c", "task/leading-paths")
+            leading_tab_file = "\tleading_tab.txt"
+            leading_space_file = " leading_space.txt"
+            leading_newline_file = "\nleading_newline.txt"
+            (repo / leading_tab_file).write_text("content\n", encoding="utf-8")
+            (repo / leading_space_file).write_text("content\n", encoding="utf-8")
+            (repo / leading_newline_file).write_text("content\n", encoding="utf-8")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "add leading whitespace paths")
+
+            clean = snapshot(repo, base)
+            self.assertEqual(
+                clean["changed_paths"],
+                sorted([leading_tab_file, leading_space_file, leading_newline_file])
+            )
+            self.assertTrue(clean["working_tree_clean"])
 
 
 if __name__ == "__main__":
