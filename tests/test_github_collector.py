@@ -113,6 +113,10 @@ class GitHubCollectorTests(unittest.TestCase):
             [[{**valid, "id": True}]],
             [[{**valid, "name": ""}]],
             [[{**valid, "enforcement": "unexpected"}]],
+            [[{**valid, "enforcement": []}]],
+            [[{**valid, "enforcement": {}}]],
+            [[{**valid, "enforcement": None}]],
+            [[{**valid, "enforcement": 123}]],
         ):
             responses = {**BASE_RESPONSES, ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
                          RULESETS_PATH: pages}
@@ -141,6 +145,10 @@ class GitHubCollectorTests(unittest.TestCase):
             {"id": 41},
             {**VALID_RULESET_41, "rules": "not-a-list"},
             {**VALID_RULESET_41, "enforcement": "unexpected"},
+            {**VALID_RULESET_41, "enforcement": []},
+            {**VALID_RULESET_41, "enforcement": {}},
+            {**VALID_RULESET_41, "enforcement": None},
+            {**VALID_RULESET_41, "enforcement": 123},
             {**VALID_RULESET_41, "conditions": "not-a-dict"},
         ):
             responses = {
@@ -155,6 +163,24 @@ class GitHubCollectorTests(unittest.TestCase):
                 result = snapshot(REPO, "main")
                 self.assertFalse(result["known"])
                 self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_valid_ruleset_enforcement_values_succeed(self):
+        for enforcement in ("active", "evaluate", "disabled"):
+            valid_summary = {"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": enforcement}
+            valid_detail = {**VALID_RULESET_41, "enforcement": enforcement}
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESETS_PATH: [[valid_summary]],
+                RULESET_41_PATH: valid_detail,
+            }
+            with self.subTest(enforcement=enforcement), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["rulesets"], [valid_detail])
 
     def test_mismatched_ruleset_identity_fails_closed(self):
         responses = {
