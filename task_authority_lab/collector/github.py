@@ -120,6 +120,8 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
         actor_type = actor.get("actor_type")
         if not isinstance(actor_type, str) or actor_type not in {"Integration", "OrganizationAdmin", "RepositoryRole", "Team", "DeployKey", "User", "EnterpriseOwner", "EnterpriseRole"}:
             return False
+        if actor_type in {"EnterpriseOwner", "EnterpriseRole"} and source_type != "Enterprise":
+            return False
         bypass_mode = actor.get("bypass_mode")
         if not isinstance(bypass_mode, str) or bypass_mode not in {"always", "pull_request", "exempt"}:
             return False
