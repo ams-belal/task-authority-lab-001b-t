@@ -524,8 +524,11 @@ def _complete_branch_protection(value: Any) -> bool:
             if not isinstance(context, str) or not context.strip():
                 return False
             app_id = check.get("app_id")
-            if app_id is not None and type(app_id) is not int:
-                return False
+            if app_id is not None:
+                if type(app_id) is not int or isinstance(app_id, bool):
+                    return False
+                if app_id != -1 and app_id <= 0:
+                    return False
     contexts = sc.get("contexts")
     if contexts is not None:
         if not isinstance(contexts, list):
