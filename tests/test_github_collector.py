@@ -1314,6 +1314,39 @@ class GitHubCollectorTests(unittest.TestCase):
         self.assertTrue(result["known"])
         self.assertEqual(result["branch_protection"], valid_bp)
 
+    def test_missing_gh_cli_fails_closed_snapshot(self):
+        with patch("task_authority_lab.collector.github.subprocess.run",
+                   side_effect=FileNotFoundError("No such file or directory: 'gh'")):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["branch_protection"], "UNKNOWN")
+        self.assertEqual(result["rulesets"], "UNKNOWN")
+        self.assertEqual(result["workflow_permissions"], "UNKNOWN")
+        self.assertEqual(result["environments"], "UNKNOWN")
+        self.assertEqual(result["repository_metadata"], "UNKNOWN")
+        self.assertEqual(result["repository"], REPO)
+        self.assertEqual(result["base_branch"], "main")
+        self.assertEqual(result["source"], "github_api_via_gh")
+        self.assertIn("snapshot_at", result)
+        self.assertIn("integrity_hash", result)
+
+    def test_valid_baseline_succeeds_snapshot(self):
+        responses = {
+            **BASE_RESPONSES,
+            ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+            RULESETS_PATH: [[]],
+        }
+        with patch("task_authority_lab.collector.github._api",
+                   side_effect=lambda route, **kwargs: responses.get(route)):
+            result = snapshot(REPO, "main")
+        self.assertTrue(result["known"])
+        self.assertEqual(result["branch_protection"], VALID_BRANCH_PROTECTION)
+        self.assertEqual(result["rulesets"], [])
+        self.assertEqual(result["workflow_permissions"], {"default_workflow_permissions": "read", "can_approve_pull_request_reviews": False})
+        self.assertEqual(result["environments"], {"total_count": 0, "environments": []})
+        self.assertEqual(result["repository_metadata"], {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False}})
+        self.assertIn("integrity_hash", result)
+
 
 if __name__ == "__main__":
     unittest.main()

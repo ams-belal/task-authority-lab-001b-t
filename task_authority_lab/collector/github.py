@@ -19,7 +19,10 @@ def _api(path: str, *, paginate: bool = False) -> dict[str, Any] | list[Any] | N
     if paginate:
         command.extend(["--paginate", "--slurp"])
     command.append(path)
-    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
     if result.returncode:
         return None
     try:
