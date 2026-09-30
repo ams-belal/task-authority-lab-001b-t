@@ -1203,6 +1203,72 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["branch_protection"], "UNKNOWN")
 
+    def test_branch_protection_status_check_app_id_valid_values(self):
+        for app_id_val in (
+            None,
+            1,
+            15368,
+            -1,
+        ):
+            check_entry = {"context": "ci"}
+            if app_id_val is not None:
+                check_entry["app_id"] = app_id_val
+            valid_bp = {
+                **VALID_BRANCH_PROTECTION,
+                "required_status_checks": {
+                    "strict": True,
+                    "checks": [check_entry],
+                }
+            }
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: valid_bp,
+            }
+            with self.subTest(app_id_val=app_id_val), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["branch_protection"], valid_bp)
+
+    def test_branch_protection_status_check_app_id_invalid_values(self):
+        for bad_app_id in (
+            0,
+            -2,
+            -10,
+            True,
+            False,
+            "15368",
+            "-1",
+            "0",
+            15368.0,
+            [],
+            {},
+        ):
+            bad_bp = {
+                **VALID_BRANCH_PROTECTION,
+                "required_status_checks": {
+                    "strict": True,
+                    "checks": [{"context": "ci", "app_id": bad_app_id}],
+                }
+            }
+            bp_path = f"repos/{REPO}/branches/main/protection"
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                bp_path: bad_bp,
+            }
+            with self.subTest(bad_app_id=bad_app_id), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["branch_protection"], "UNKNOWN")
+
     def test_valid_branch_protection_nested_restrictions_succeeds(self):
         valid_bp = {
             **VALID_BRANCH_PROTECTION,
