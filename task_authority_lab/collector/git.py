@@ -10,7 +10,7 @@ from ..canonical import sha256_json
 
 
 def _git(repo: Path, *args: str, strip: bool = True) -> str:
-    result = subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
+    result = subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True, timeout=10)
     return result.stdout.strip() if strip else result.stdout
 
 

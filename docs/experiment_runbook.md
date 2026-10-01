@@ -66,5 +66,5 @@ Absent, omitted, or malformed repository metadata fields must force `repository_
 
 ## Git Snapshot Changed-Path Limitations
 
-Local git snapshots capture committed changed paths via `git diff --name-only -z` (NUL-delimited output) to guarantee lossless reporting of paths containing unusual characters such as tabs (`\t`) and newlines (`\n`), preventing quoting or escaping defects (such as `"review\tpolicy.txt"` being misinterpreted). The collector enforces worktree cleanliness and checks for mid-capture mutations of the worktree or referenced commits/branches, raising a `ValueError` if any asynchronous changes occur during collection.
+Local git snapshots capture committed changed paths via `git diff --name-only -z` (NUL-delimited output) to guarantee lossless reporting of paths containing unusual characters such as tabs (`\t`) and newlines (`\n`), preventing quoting or escaping defects (such as `"review\tpolicy.txt"` being misinterpreted). The collector enforces worktree cleanliness, bounds each Git subprocess invocation with a finite deadline (raising `subprocess.TimeoutExpired` and aborting capture without emitting a partial snapshot on timeout), and checks for mid-capture mutations of the worktree or referenced commits/branches, raising a `ValueError` if any asynchronous changes occur during collection.
 
