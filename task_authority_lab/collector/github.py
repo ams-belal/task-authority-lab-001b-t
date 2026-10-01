@@ -20,8 +20,8 @@ def _api(path: str, *, paginate: bool = False) -> dict[str, Any] | list[Any] | N
         command.extend(["--paginate", "--slurp"])
     command.append(path)
     try:
-        result = subprocess.run(command, capture_output=True, text=True)
-    except (FileNotFoundError, PermissionError):
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired):
         return None
     if result.returncode:
         return None

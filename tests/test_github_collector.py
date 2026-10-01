@@ -82,7 +82,7 @@ class GitHubCollectorTests(unittest.TestCase):
             self.assertEqual(_api(RULESETS_PATH, paginate=True), [[], []])
         run.assert_called_once_with(
             ["gh", "api", "--paginate", "--slurp", RULESETS_PATH],
-            capture_output=True, text=True,
+            capture_output=True, text=True, timeout=10,
         )
 
     def test_paginated_rulesets_are_combined(self):
@@ -1399,6 +1399,22 @@ class GitHubCollectorTests(unittest.TestCase):
     def test_launch_denied_gh_cli_fails_closed_snapshot(self):
         with patch("task_authority_lab.collector.github.subprocess.run",
                    side_effect=PermissionError("Permission denied: 'gh'")):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["branch_protection"], "UNKNOWN")
+        self.assertEqual(result["rulesets"], "UNKNOWN")
+        self.assertEqual(result["workflow_permissions"], "UNKNOWN")
+        self.assertEqual(result["environments"], "UNKNOWN")
+        self.assertEqual(result["repository_metadata"], "UNKNOWN")
+        self.assertEqual(result["repository"], REPO)
+        self.assertEqual(result["base_branch"], "main")
+        self.assertEqual(result["source"], "github_api_via_gh")
+        self.assertIn("snapshot_at", result)
+        self.assertIn("integrity_hash", result)
+
+    def test_timeout_gh_cli_fails_closed_snapshot(self):
+        with patch("task_authority_lab.collector.github.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired(["gh", "api"], 10)):
             result = snapshot(REPO, "main")
         self.assertFalse(result["known"])
         self.assertEqual(result["branch_protection"], "UNKNOWN")
