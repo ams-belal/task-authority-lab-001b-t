@@ -242,6 +242,8 @@ def _valid_ruleset_detail(detail: Any, summary: dict[str, Any]) -> bool:
             return False
         parameters = rule.get("parameters")
         if rule_type == "pull_request":
+            if target != "branch":
+                return False
             if not isinstance(parameters, dict):
                 return False
             approvals = parameters.get("required_approving_review_count")

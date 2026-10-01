@@ -257,6 +257,80 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["rulesets"], "UNKNOWN")
 
+    def test_non_branch_pull_request_rule_fails_closed(self):
+        for target, conditions in (
+            ("repository", {
+                "repository_name": {"include": ["*"], "exclude": []},
+            }),
+            ("tag", {
+                "ref_name": {"include": ["refs/tags/*"], "exclude": []},
+            }),
+        ):
+            detail = {
+                "id": 41,
+                "name": "one",
+                "target": target,
+                "source_type": "Repository",
+                "source": REPO,
+                "enforcement": "active",
+                "bypass_actors": [],
+                "conditions": conditions,
+                "rules": [{"type": "pull_request", "parameters": {
+                    "required_approving_review_count": 1,
+                    "require_last_push_approval": False,
+                    "dismiss_stale_reviews_on_push": True,
+                    "require_code_owner_review": True,
+                    "required_review_thread_resolution": True,
+                }}],
+            }
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}]],
+                RULESET_41_PATH: detail,
+            }
+            with self.subTest(target=target), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["rulesets"], "UNKNOWN")
+
+    def test_valid_non_branch_rules_succeed(self):
+        for target, conditions in (
+            ("repository", {
+                "repository_name": {"include": ["*"], "exclude": []},
+            }),
+            ("tag", {
+                "ref_name": {"include": ["refs/tags/*"], "exclude": []},
+            }),
+        ):
+            detail = {
+                "id": 41,
+                "name": "one",
+                "target": target,
+                "source_type": "Repository",
+                "source": REPO,
+                "enforcement": "active",
+                "bypass_actors": [],
+                "conditions": conditions,
+                "rules": [{"type": "required_linear_history"}],
+            }
+            responses = {
+                **BASE_RESPONSES,
+                ENVIRONMENTS_PATH: {"total_count": 0, "environments": []},
+                RULESETS_PATH: [[{"id": 41, "name": "one", "source_type": "Repository", "source": REPO, "enforcement": "active"}]],
+                RULESET_41_PATH: detail,
+            }
+            with self.subTest(target=target), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: responses.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["rulesets"], [detail])
+
     def test_enterprise_malformed_bypass_actors_shape_fails_closed(self):
         base_ent_detail = {
             "id": 41,
@@ -343,13 +417,7 @@ class GitHubCollectorTests(unittest.TestCase):
                     "enforcement": "active",
                     "bypass_actors": [{"actor_type": actor_type, **({"actor_id": actor_id} if actor_id is not None else {}), "bypass_mode": "always"}],
                     "conditions": conditions,
-                    "rules": [{"type": "pull_request", "parameters": {
-                        "required_approving_review_count": 1,
-                        "require_last_push_approval": False,
-                        "dismiss_stale_reviews_on_push": True,
-                        "require_code_owner_review": True,
-                        "required_review_thread_resolution": True,
-                    }}],
+                    "rules": [{"type": "required_linear_history"}],
                 }
                 valid_responses = {
                     **BASE_RESPONSES,
@@ -478,13 +546,7 @@ class GitHubCollectorTests(unittest.TestCase):
                     "enforcement": "active",
                     "bypass_actors": ent_bypass,
                     "conditions": conditions,
-                    "rules": [{"type": "pull_request", "parameters": {
-                        "required_approving_review_count": 1,
-                        "require_last_push_approval": False,
-                        "dismiss_stale_reviews_on_push": True,
-                        "require_code_owner_review": True,
-                        "required_review_thread_resolution": True,
-                    }}],
+                    "rules": [{"type": "required_linear_history"}],
                 }
                 responses = {
                     **BASE_RESPONSES,
@@ -838,6 +900,7 @@ class GitHubCollectorTests(unittest.TestCase):
         valid_repo_target = {
             **ent_base,
             "target": "repository",
+            "rules": [{"type": "required_linear_history"}],
             "conditions": {
                 "organization_id": {"organization_ids": [10]},
                 "repository_property": {
@@ -850,6 +913,7 @@ class GitHubCollectorTests(unittest.TestCase):
         valid_org_property_target = {
             **ent_base,
             "target": "repository",
+            "rules": [{"type": "required_linear_history"}],
             "conditions": {
                 "organization_property": {
                     "include": [
