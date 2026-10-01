@@ -148,6 +148,40 @@ class GitCollectorTests(unittest.TestCase):
             )
             self.assertTrue(clean["working_tree_clean"])
 
+    def test_git_invocation_uses_timeout(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            prepared_repo(repo)
+            with patch("task_authority_lab.collector.git.subprocess.run") as mock_run:
+                mock_run.return_value = subprocess.CompletedProcess([], 0, "main", "")
+                try:
+                    git_collector._git(repo, "branch", "--show-current")
+                except Exception:
+                    pass
+                mock_run.assert_called_once()
+                _, kwargs = mock_run.call_args
+                self.assertEqual(kwargs.get("timeout"), 10)
+
+    def test_timeout_git_invocation_aborts_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            base = prepared_repo(repo)
+            with patch("task_authority_lab.collector.git.subprocess.run",
+                       side_effect=subprocess.TimeoutExpired(["git", "status"], 10)):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    snapshot(repo, base)
+
+    def test_valid_baseline_succeeds_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            base = prepared_repo(repo)
+            clean = snapshot(repo, base)
+            self.assertEqual(clean["repo"], str(Path(repo).resolve()))
+            self.assertEqual(clean["branch"], "task/1")
+            self.assertEqual(clean["base_commit"], base)
+            self.assertTrue(clean["working_tree_clean"])
+            self.assertIn("integrity_hash", clean)
+
 
 if __name__ == "__main__":
     unittest.main()
