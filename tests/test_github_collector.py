@@ -718,6 +718,36 @@ class GitHubCollectorTests(unittest.TestCase):
             self.assertTrue(result["known"])
             self.assertEqual(result["environments"], response)
 
+    def test_environment_wait_timer_valid_boundaries_succeed(self):
+        for timer in (0, 43200):
+            env = environment(
+                rules=[{"id": 8, "type": "wait_timer", "wait_timer": timer}],
+                branch_policy=None,
+            )
+            response = {"total_count": 1, "environments": [env]}
+            with self.subTest(timer=timer), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertTrue(result["known"])
+                self.assertEqual(result["environments"], response)
+
+    def test_environment_wait_timer_over_limit_fails_closed(self):
+        for timer in (43201, 50000, 1000000):
+            env = environment(
+                rules=[{"id": 8, "type": "wait_timer", "wait_timer": timer}],
+                branch_policy=None,
+            )
+            response = {"total_count": 1, "environments": [env]}
+            with self.subTest(timer=timer), patch(
+                "task_authority_lab.collector.github._api",
+                side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get(route),
+            ):
+                result = snapshot(REPO, "main")
+                self.assertFalse(result["known"])
+                self.assertEqual(result["environments"], "UNKNOWN")
+
     def test_omitted_pull_request_effective_gate_fields_fail_closed(self):
         for bad_params in (
             {},
