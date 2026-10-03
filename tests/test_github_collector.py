@@ -661,6 +661,63 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["environments"], "UNKNOWN")
 
+    def test_environment_branch_policy_rule_omitting_deployment_policy_fails_closed(self):
+        env = environment(
+            rules=[{"id": 10, "type": "branch_policy"}],
+            branch_policy=None,
+        )
+        response = {"total_count": 1, "environments": [env]}
+        with patch(
+            "task_authority_lab.collector.github._api",
+            side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get(route),
+        ):
+            result = snapshot(REPO, "main")
+            self.assertFalse(result["known"])
+            self.assertEqual(result["environments"], "UNKNOWN")
+
+    def test_environment_branch_policy_rule_missing_deployment_policy_key_fails_closed(self):
+        env = environment(
+            rules=[{"id": 10, "type": "branch_policy"}],
+            branch_policy={"protected_branches": True, "custom_branch_policies": False},
+        )
+        del env["deployment_branch_policy"]
+        response = {"total_count": 1, "environments": [env]}
+        with patch(
+            "task_authority_lab.collector.github._api",
+            side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get(route),
+        ):
+            result = snapshot(REPO, "main")
+            self.assertFalse(result["known"])
+            self.assertEqual(result["environments"], "UNKNOWN")
+
+    def test_environment_branch_policy_rule_with_valid_deployment_policy_succeeds(self):
+        env = environment(
+            rules=[{"id": 10, "type": "branch_policy"}],
+            branch_policy={"protected_branches": True, "custom_branch_policies": False},
+        )
+        response = {"total_count": 1, "environments": [env]}
+        with patch(
+            "task_authority_lab.collector.github._api",
+            side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get(route),
+        ):
+            result = snapshot(REPO, "main")
+            self.assertTrue(result["known"])
+            self.assertEqual(result["environments"], response)
+
+    def test_environment_without_branch_policy_rule_with_null_deployment_policy_succeeds(self):
+        env = environment(
+            rules=[{"id": 8, "type": "wait_timer", "wait_timer": 30}],
+            branch_policy=None,
+        )
+        response = {"total_count": 1, "environments": [env]}
+        with patch(
+            "task_authority_lab.collector.github._api",
+            side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get(route),
+        ):
+            result = snapshot(REPO, "main")
+            self.assertTrue(result["known"])
+            self.assertEqual(result["environments"], response)
+
     def test_omitted_pull_request_effective_gate_fields_fail_closed(self):
         for bad_params in (
             {},

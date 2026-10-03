@@ -342,6 +342,14 @@ def _complete_environments(value: Any) -> bool:
                 or identifier in identifiers or name.casefold() in names
                 or not isinstance(rules, list) or policy is ...):
             return False
+        if any(not _valid_protection_rule(rule) for rule in rules):
+            return False
+        has_branch_policy_rule = any(
+            isinstance(rule, dict) and rule.get("type") == "branch_policy"
+            for rule in rules
+        )
+        if has_branch_policy_rule and not isinstance(policy, dict):
+            return False
         if policy is not None and (
             not isinstance(policy, dict)
             or type(policy.get("protected_branches")) is not bool
@@ -350,8 +358,6 @@ def _complete_environments(value: Any) -> bool:
             return False
         # This endpoint exposes the flag, not the custom branch patterns.
         if policy is not None and policy["custom_branch_policies"]:
-            return False
-        if any(not _valid_protection_rule(rule) for rule in rules):
             return False
         names.add(name.casefold())
         identifiers.add(identifier)
