@@ -292,7 +292,8 @@ def _valid_protection_rule(rule: Any) -> bool:
         return False
     kind = rule.get("type")
     if kind == "wait_timer":
-        return type(rule.get("wait_timer")) is int and rule["wait_timer"] >= 0
+        wait_timer = rule.get("wait_timer")
+        return type(wait_timer) is int and 0 <= wait_timer <= 43200
     if kind == "branch_policy":
         return True
     if kind == "required_reviewers":
