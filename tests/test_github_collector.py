@@ -787,6 +787,29 @@ class GitHubCollectorTests(unittest.TestCase):
                 self.assertFalse(result["known"])
                 self.assertEqual(result["environments"], "UNKNOWN")
 
+    def test_environment_required_reviewers_mixed_over_limit_fails_closed(self):
+        reviewers = [
+            {"type": "User", "reviewer": {"id": 11, "login": "user-1"}},
+            {"type": "User", "reviewer": {"id": 12, "login": "user-2"}},
+            {"type": "User", "reviewer": {"id": 13, "login": "user-3"}},
+            {"type": "User", "reviewer": {"id": 14, "login": "user-4"}},
+            {"type": "Team", "reviewer": {"id": 15, "slug": "team-1"}},
+            {"type": "Team", "reviewer": {"id": 16, "slug": "team-2"}},
+            {"type": "Team", "reviewer": {"id": 17, "slug": "team-3"}},
+        ]
+        env = environment(
+            rules=[{"id": 9, "type": "required_reviewers", "prevent_self_review": True, "reviewers": reviewers}],
+            branch_policy=None,
+        )
+        response = {"total_count": 1, "environments": [env]}
+        with patch(
+            "task_authority_lab.collector.github._api",
+            side_effect=lambda route, **kwargs: {**BASE_RESPONSES, ENVIRONMENTS_PATH: response}.get(route),
+        ):
+            result = snapshot(REPO, "main")
+            self.assertFalse(result["known"])
+            self.assertEqual(result["environments"], "UNKNOWN")
+
     def test_omitted_pull_request_effective_gate_fields_fail_closed(self):
         for bad_params in (
             {},
