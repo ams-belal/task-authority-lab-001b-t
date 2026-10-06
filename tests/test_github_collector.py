@@ -1641,6 +1641,38 @@ class GitHubCollectorTests(unittest.TestCase):
         self.assertIn("snapshot_at", result)
         self.assertIn("integrity_hash", result)
 
+    def test_undecodable_stdout_fails_closed_snapshot(self):
+        with patch("task_authority_lab.collector.github.subprocess.run",
+                   side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["branch_protection"], "UNKNOWN")
+        self.assertEqual(result["rulesets"], "UNKNOWN")
+        self.assertEqual(result["workflow_permissions"], "UNKNOWN")
+        self.assertEqual(result["environments"], "UNKNOWN")
+        self.assertEqual(result["repository_metadata"], "UNKNOWN")
+        self.assertEqual(result["repository"], REPO)
+        self.assertEqual(result["base_branch"], "main")
+        self.assertEqual(result["source"], "github_api_via_gh")
+        self.assertIn("snapshot_at", result)
+        self.assertIn("integrity_hash", result)
+
+    def test_undecodable_stderr_successful_read_fails_closed_snapshot(self):
+        with patch("task_authority_lab.collector.github.subprocess.run",
+                   side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["branch_protection"], "UNKNOWN")
+
+    def test_undecodable_stderr_unsuccessful_read_fails_closed_snapshot(self):
+        with patch("task_authority_lab.collector.github.subprocess.run",
+                   side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["branch_protection"], "UNKNOWN")
+        self.assertIn("snapshot_at", result)
+        self.assertIn("integrity_hash", result)
+
     def test_valid_baseline_succeeds_snapshot(self):
         responses = {
             **BASE_RESPONSES,
