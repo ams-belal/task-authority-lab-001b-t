@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -1642,8 +1643,10 @@ class GitHubCollectorTests(unittest.TestCase):
         self.assertIn("integrity_hash", result)
 
     def test_undecodable_stdout_fails_closed_snapshot(self):
-        with patch("task_authority_lab.collector.github.subprocess.run",
-                   side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")):
+        _real_run = subprocess.run
+        def fake_run(args, **kwargs):
+            return _real_run([sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'\\xff')"], **kwargs)
+        with patch("task_authority_lab.collector.github.subprocess.run", side_effect=fake_run):
             result = snapshot(REPO, "main")
         self.assertFalse(result["known"])
         self.assertEqual(result["branch_protection"], "UNKNOWN")
@@ -1658,15 +1661,19 @@ class GitHubCollectorTests(unittest.TestCase):
         self.assertIn("integrity_hash", result)
 
     def test_undecodable_stderr_successful_read_fails_closed_snapshot(self):
-        with patch("task_authority_lab.collector.github.subprocess.run",
-                   side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")):
+        _real_run = subprocess.run
+        def fake_run(args, **kwargs):
+            return _real_run([sys.executable, "-c", "import sys; print('{}'); sys.stderr.buffer.write(b'\\xff')"], **kwargs)
+        with patch("task_authority_lab.collector.github.subprocess.run", side_effect=fake_run):
             result = snapshot(REPO, "main")
         self.assertFalse(result["known"])
         self.assertEqual(result["branch_protection"], "UNKNOWN")
 
     def test_undecodable_stderr_unsuccessful_read_fails_closed_snapshot(self):
-        with patch("task_authority_lab.collector.github.subprocess.run",
-                   side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")):
+        _real_run = subprocess.run
+        def fake_run(args, **kwargs):
+            return _real_run([sys.executable, "-c", "import sys; sys.stderr.buffer.write(b'\\xff'); sys.exit(1)"], **kwargs)
+        with patch("task_authority_lab.collector.github.subprocess.run", side_effect=fake_run):
             result = snapshot(REPO, "main")
         self.assertFalse(result["known"])
         self.assertEqual(result["branch_protection"], "UNKNOWN")
