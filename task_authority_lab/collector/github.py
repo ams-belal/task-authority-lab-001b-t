@@ -300,7 +300,7 @@ def _valid_protection_rule(rule: Any) -> bool:
         if type(rule.get("prevent_self_review")) is not bool:
             return False
         reviewers = rule.get("reviewers")
-        if not isinstance(reviewers, list) or not reviewers:
+        if not isinstance(reviewers, list) or not reviewers or len(reviewers) > 6:
             return False
         for entry in reviewers:
             if not isinstance(entry, dict) or not isinstance(entry.get("reviewer"), dict):
