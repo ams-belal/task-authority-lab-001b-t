@@ -21,7 +21,7 @@ def _api(path: str, *, paginate: bool = False) -> dict[str, Any] | list[Any] | N
     command.append(path)
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=10)
-    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired):
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, UnicodeDecodeError):
         return None
     if result.returncode:
         return None

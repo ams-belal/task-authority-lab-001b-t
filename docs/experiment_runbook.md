@@ -43,7 +43,7 @@ post-experiment counterfactuals, never as a rerun of Policy v0.
 
 ## GitHub Native Controls & Ruleset Detail Limitations
 
-The read-only recorder App queries GitHub repository rulesets via `gh api`. If the `gh` CLI executable is unavailable at process launch (`FileNotFoundError`), encounters a launch permission failure (`PermissionError`), or times out (`subprocess.TimeoutExpired`), the adapter treats it as an inaccessible API read, preserving the fail-closed `UNKNOWN` behavior for each required field and `known=false` for the snapshot. While
+The read-only recorder App queries GitHub repository rulesets via `gh api`. If the `gh` CLI executable is unavailable at process launch (`FileNotFoundError`), encounters a launch permission failure (`PermissionError`), times out (`subprocess.TimeoutExpired`), or produces output that cannot be decoded as text (`UnicodeDecodeError` on undecodable stdout or stderr, including stderr on an unsuccessful read), the adapter treats it as an inaccessible API read, preserving the fail-closed `UNKNOWN` behavior for each required field and `known=false` for the snapshot. While
 `includes_parents=true` permits discovery and detail retrieval of inherited rulesets
 where token permissions allow, organization- or enterprise-level rulesets whose
 scopes are inaccessible to the repository installation token will return `None`
