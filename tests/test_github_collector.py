@@ -1708,7 +1708,9 @@ class GitHubCollectorTests(unittest.TestCase):
                 pass
             else:
                 raise AssertionError("Expected RecursionError for excessive nesting payload")
-            return _real_run([sys.executable, "-c", f"import sys; sys.stdout.write({payload!r})"], **kwargs)
+            res = _real_run([sys.executable, "-c", "import sys; sys.stdout.write('[' * 100000 + ']' * 100000)"], **kwargs)
+            assert res.returncode == 0, f"Child exited with {res.returncode}"
+            return res
         with patch("task_authority_lab.collector.github.subprocess.run", side_effect=fake_run):
             self.assertIsNone(_api("some/path"))
 
@@ -1734,7 +1736,9 @@ class GitHubCollectorTests(unittest.TestCase):
                     pass
                 else:
                     raise AssertionError("Expected RecursionError for excessive nesting payload")
-                return _real_run([sys.executable, "-c", f"import sys; sys.stdout.write({payload!r})"], **kwargs)
+                res = _real_run([sys.executable, "-c", "import sys; sys.stdout.write('[' * 100000 + ']' * 100000)"], **kwargs)
+                assert res.returncode == 0, f"Child exited with {res.returncode}"
+                return res
             return _real_run([sys.executable, "-c", "import sys; print('{}')"], **kwargs)
         with patch("task_authority_lab.collector.github.subprocess.run", side_effect=fake_run):
             result = snapshot(REPO, "main")
