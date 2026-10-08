@@ -1700,7 +1700,15 @@ class GitHubCollectorTests(unittest.TestCase):
     def test_api_excessive_nesting_recursion_error_returns_none(self):
         _real_run = subprocess.run
         def fake_run(args, **kwargs):
-            return _real_run([sys.executable, "-c", "import sys; sys.stdout.write('[' * 10000 + ']' * 10000)"], **kwargs)
+            import json
+            payload = '[' * 100000 + ']' * 100000
+            try:
+                json.loads(payload)
+            except RecursionError:
+                pass
+            else:
+                raise AssertionError("Expected RecursionError for excessive nesting payload")
+            return _real_run([sys.executable, "-c", f"import sys; sys.stdout.write({payload!r})"], **kwargs)
         with patch("task_authority_lab.collector.github.subprocess.run", side_effect=fake_run):
             self.assertIsNone(_api("some/path"))
 
@@ -1718,7 +1726,15 @@ class GitHubCollectorTests(unittest.TestCase):
         _real_run = subprocess.run
         def fake_run(args, **kwargs):
             if "branches" in args[-1]:
-                return _real_run([sys.executable, "-c", "import sys; sys.stdout.write('[' * 10000 + ']' * 10000)"], **kwargs)
+                import json
+                payload = '[' * 100000 + ']' * 100000
+                try:
+                    json.loads(payload)
+                except RecursionError:
+                    pass
+                else:
+                    raise AssertionError("Expected RecursionError for excessive nesting payload")
+                return _real_run([sys.executable, "-c", f"import sys; sys.stdout.write({payload!r})"], **kwargs)
             return _real_run([sys.executable, "-c", "import sys; print('{}')"], **kwargs)
         with patch("task_authority_lab.collector.github.subprocess.run", side_effect=fake_run):
             result = snapshot(REPO, "main")
