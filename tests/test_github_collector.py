@@ -1697,6 +1697,41 @@ class GitHubCollectorTests(unittest.TestCase):
         self.assertEqual(result["repository_metadata"], {"default_branch": "main", "private": False, "permissions": {"pull": True, "push": True, "admin": False}})
         self.assertIn("integrity_hash", result)
 
+    def test_api_excessive_nesting_recursion_error_returns_none(self):
+        _real_run = subprocess.run
+        def fake_run(args, **kwargs):
+            return _real_run([sys.executable, "-c", "import sys; sys.stdout.write('[' * 10000 + ']' * 10000)"], **kwargs)
+        with patch("task_authority_lab.collector.github.subprocess.run", side_effect=fake_run):
+            self.assertIsNone(_api("some/path"))
+
+    def test_api_malformed_json_returns_none(self):
+        with patch("task_authority_lab.collector.github.subprocess.run",
+                   return_value=subprocess.CompletedProcess([], 0, "not-json", "")):
+            self.assertIsNone(_api("some/path"))
+
+    def test_api_valid_json_succeeds(self):
+        with patch("task_authority_lab.collector.github.subprocess.run",
+                   return_value=subprocess.CompletedProcess([], 0, '{"a": 1}', "")):
+            self.assertEqual(_api("some/path"), {"a": 1})
+
+    def test_snapshot_excessive_nesting_fails_closed(self):
+        _real_run = subprocess.run
+        def fake_run(args, **kwargs):
+            if "branches" in args[-1]:
+                return _real_run([sys.executable, "-c", "import sys; sys.stdout.write('[' * 10000 + ']' * 10000)"], **kwargs)
+            return _real_run([sys.executable, "-c", "import sys; print('{}')"], **kwargs)
+        with patch("task_authority_lab.collector.github.subprocess.run", side_effect=fake_run):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["branch_protection"], "UNKNOWN")
+
+    def test_snapshot_malformed_json_fails_closed(self):
+        with patch("task_authority_lab.collector.github.subprocess.run",
+                   return_value=subprocess.CompletedProcess([], 0, "malformed-json-payload", "")):
+            result = snapshot(REPO, "main")
+        self.assertFalse(result["known"])
+        self.assertEqual(result["branch_protection"], "UNKNOWN")
+
 
 if __name__ == "__main__":
     unittest.main()
