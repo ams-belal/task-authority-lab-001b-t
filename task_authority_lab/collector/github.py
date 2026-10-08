@@ -27,7 +27,7 @@ def _api(path: str, *, paginate: bool = False) -> dict[str, Any] | list[Any] | N
         return None
     try:
         return json.loads(result.stdout)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, RecursionError):
         return None
 
 
